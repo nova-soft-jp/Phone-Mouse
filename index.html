@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone-Mouse - スマホがPCの無線タッチパッドになる無料アプリ</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --accent: #2f81f7;
+            --accent-hover: #58a6ff;
+            --text: #e6edf3;
+            --muted: #8b949e;
+        }
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", sans-serif;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        header {
+            text-align: center;
+            padding: 50px 0 40px;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(47, 129, 247, 0.15);
+            color: var(--accent-hover);
+            border: 1px solid rgba(47, 129, 247, 0.4);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        h1 {
+            font-size: 42px;
+            margin: 0 0 16px;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: var(--muted);
+            font-size: 18px;
+            max-width: 600px;
+            margin: 0 auto 32px;
+        }
+        .download-btn {
+            display: inline-block;
+            background-color: var(--accent);
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 16px 36px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(47, 129, 247, 0.35);
+            transition: transform 0.15s, background-color 0.15s;
+        }
+        .download-btn:hover {
+            background-color: var(--accent-hover);
+            transform: translateY(-2px);
+        }
+        .version-info {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin: 50px 0;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .card h3 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+        .card p {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 0;
+        }
+        .guide-box {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            margin-top: 30px;
+        }
+        .guide-box h2 {
+            margin-top: 0;
+            font-size: 22px;
+        }
+        ol {
+            padding-left: 20px;
+            color: var(--text);
+        }
+        li {
+            margin-bottom: 10px;
+        }
+        .notice {
+            background: rgba(210, 153, 34, 0.1);
+            border-left: 4px solid #d29922;
+            padding: 12px 16px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #e3b341;
+            border-radius: 4px;
+        }
+        footer {
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="badge">Windows 10 / 11 対応・完全無料</div>
+            <h1>Phone-Mouse</h1>
+            <p class="subtitle">
+                インストール不要・スマホにアプリ不要。<br>
+                QRコードを読み取るだけで、あなたのスマホがPCの高性能無線タッチパッド＆キーボードに変わります。
+            </p>
+            <a href="https://github.com/ryouma5695-stack/Phone-Mouse/releases/latest/download/TouchpadPro.exe" class="download-btn">
+                ⬇ Windows版をダウンロード (.exe)
+            </a>
+            <div class="version-info">バージョン 1.0.0 | Windows 64bit | 無料フリーソフト</div>
+        </header>
+
+        <section class="features">
+            <div class="card">
+                <h3>📱 スマホ側はインストール不要</h3>
+                <p>PCで起動して表示されるQRコードをスマホのカメラで読み取るだけ。標準ブラウザですぐに操作できます。</p>
+            </div>
+            <div class="card">
+                <h3>🖱️ ノートPC並みの快適操作</h3>
+                <p>2本指スクロール、右クリック、ダブルタップでのドラッグ＆ドロップ、感度調整まで直感的に操作可能。</p>
+            </div>
+            <div class="card">
+                <h3>⌨️ 日本語・絵文字もそのまま入力</h3>
+                <p>スマホのフリック入力や音声入力で打った文章を、文字化けなしでPCへダイレクトに送信できます。</p>
+            </div>
+        </section>
+
+        <section class="guide-box">
+            <h2>使い方（3ステップ）</h2>
+            <ol>
+                <li>上のボタンから <strong>TouchpadPro.exe</strong> をダウンロードします。</li>
+                <li>PCとスマホを<strong>同じWi-Fi</strong>に繋いだ状態で、ダウンロードしたファイルをダブルクリックして起動します。</li>
+                <li>画面に表示される<strong>QRコード</strong>をスマホのカメラで読み取れば接続完了です！</li>
+            </ol>
+            <div class="notice">
+                <strong>※初回起動時のご注意：</strong><br>
+                Windowsの「PCが保護されました」という青い画面が表示された場合は、<strong>「詳細情報」→「実行」</strong>をクリックしてください。また、ファイアウォールの確認が出た場合は「アクセスを許可する」を選択してください。
+            </div>
+        </section>
+
+        <footer>
+            © 2026 Phone-Mouse Project. All rights reserved.
+        </footer>
+    </div>
+</body>
+</html>
