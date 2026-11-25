@@ -214,11 +214,16 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
     finally:
         active_websockets.discard(websocket)
         if not active_websockets:
-            if close_code == 4002:
+            if close_code in (4002, 4004, 1000, 1001):
                 if disconnect_task is not None:
                     disconnect_task.cancel()
                     disconnect_task = None
-                report_tray(False, "Phone-Mouse", "QRコードが更新されました")
+                message = (
+                    "QRコードが更新されました"
+                    if close_code == 4002
+                    else "スマホのタブが閉じられました"
+                )
+                report_tray(False, "Phone-Mouse", message)
             else:
                 if disconnect_task is not None:
                     disconnect_task.cancel()

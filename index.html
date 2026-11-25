@@ -301,18 +301,35 @@
     localStorage.setItem(activeTabKey, tabId);
   } catch (_) {}
 
+  function claimTabIfAvailable() {
+    try {
+      if (!localStorage.getItem(activeTabKey)) {
+        localStorage.setItem(activeTabKey, tabId);
+      }
+      superseded = localStorage.getItem(activeTabKey) !== tabId;
+    } catch (_) {
+      superseded = false;
+    }
+  }
+
   window.addEventListener("storage", (event) => {
-    if (event.key !== activeTabKey || !event.newValue || event.newValue === tabId) return;
-    superseded = true;
-    if (reconnectTimer !== null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+    if (event.key !== activeTabKey) return;
+    if (event.newValue && event.newValue !== tabId) {
+      superseded = true;
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (ws && ws.readyState < WebSocket.CLOSING) {
+        ws.close(4001, "別のタブに切り替わりました");
+      }
+      document.getElementById("dot").classList.remove("connected");
+      document.getElementById("statusText").textContent = "別のタブで接続中";
+    } else if (!event.newValue && superseded && !document.hidden) {
+      superseded = false;
+      try { localStorage.setItem(activeTabKey, tabId); } catch (_) {}
+      connect();
     }
-    if (ws && ws.readyState < WebSocket.CLOSING) {
-      ws.close(4001, "別のタブに切り替わりました");
-    }
-    document.getElementById("dot").classList.remove("connected");
-    document.getElementById("statusText").textContent = "別のタブで接続中";
   });
 
   function scheduleReconnect(delay = 800) {
@@ -380,14 +397,27 @@
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close(4003, "スマートフォンで一時停止中");
-      } else {
-        document.getElementById("statusText").textContent = "一時停止中";
-      }
       return;
     }
+    if (superseded) {
+      claimTabIfAvailable();
+    }
     if (!superseded && (!ws || ws.readyState === WebSocket.CLOSED)) connect();
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    try {
+      if (localStorage.getItem(activeTabKey) === tabId) {
+        localStorage.removeItem(activeTabKey);
+      }
+    } catch (_) {}
+    if (ws && ws.readyState < WebSocket.CLOSING) {
+      ws.close(4004, "スマホのタブが閉じられました");
+    }
   });
 
   function sendNow(obj) {
