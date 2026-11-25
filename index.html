@@ -292,27 +292,76 @@
   const token = params.get("token") || "";
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   let ws = null;
+  const activeTabKey = "phone-mouse-active-tab";
+  const tabId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let superseded = false;
+  let reconnectTimer = null;
+
+  try {
+    localStorage.setItem(activeTabKey, tabId);
+  } catch (_) {}
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== activeTabKey || !event.newValue || event.newValue === tabId) return;
+    superseded = true;
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws && ws.readyState < WebSocket.CLOSING) {
+      ws.close(4001, "別のタブに切り替わりました");
+    }
+    document.getElementById("dot").classList.remove("connected");
+    document.getElementById("statusText").textContent = "別のタブで接続中";
+  });
+
+  function scheduleReconnect(delay = 800) {
+    if (superseded || document.hidden || reconnectTimer !== null) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  }
 
   let pendingDx = 0;
   let pendingDy = 0;
   let pendingScroll = 0;
 
   function connect() {
-    ws = new WebSocket(`${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)}`);
-    ws.onopen = () => {
+    if (superseded || document.hidden) return;
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+    const socket = new WebSocket(`${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)}`);
+    ws = socket;
+    socket.onopen = () => {
+      if (ws !== socket) return;
       document.getElementById("dot").classList.add("connected");
       document.getElementById("statusText").textContent = "接続中";
     };
-    ws.onclose = (event) => {
+    socket.onclose = (event) => {
+      if (ws !== socket) return;
       document.getElementById("dot").classList.remove("connected");
-      if (event.code === 4001) {
+      if (event.code === 4001 || superseded) {
         document.getElementById("statusText").textContent = "別の接続に切替済み";
         return;
       }
+      if (event.code === 4002) {
+        document.getElementById("statusText").textContent = "新しいQRコードを読み取ってください";
+        return;
+      }
+      if (event.code === 4003) {
+        document.getElementById("statusText").textContent = document.hidden ? "一時停止中" : "再接続中";
+        if (!document.hidden) scheduleReconnect(0);
+        return;
+      }
+      if (document.hidden) {
+        document.getElementById("statusText").textContent = "一時停止中";
+        return;
+      }
       document.getElementById("statusText").textContent = "再接続";
-      setTimeout(connect, 800);
+      scheduleReconnect();
     };
-    ws.onmessage = (e) => {
+    socket.onmessage = (e) => {
+      if (ws !== socket) return;
       const msg = JSON.parse(e.data);
       if (msg.type === "init_settings" && msg.settings) {
         document.getElementById("sensRange").value = msg.settings.sensitivity;
@@ -324,6 +373,22 @@
     };
   }
   connect();
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close(4003, "スマートフォンで一時停止中");
+      } else {
+        document.getElementById("statusText").textContent = "一時停止中";
+      }
+      return;
+    }
+    if (!superseded && (!ws || ws.readyState === WebSocket.CLOSED)) connect();
+  });
 
   function sendNow(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {

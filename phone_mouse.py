@@ -77,8 +77,10 @@ def save_settings(data):
 settings = load_settings()
 TOKEN = secrets.token_urlsafe(12)
 PORT = 8765
+CONNECTION_GRACE_SECONDS = 24 * 60 * 60
 server_loop = None
 active_websockets = set()
+disconnect_task = None
 tray_report = None
 
 def report_tray(connected=None, title=None, message=None, is_error=False):
@@ -113,12 +115,15 @@ rem_y = 0.0
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
-    global rem_x, rem_y, settings, server_loop
+    global rem_x, rem_y, settings, server_loop, disconnect_task
     if token != TOKEN:
         await websocket.close(code=1008)
         return
     await websocket.accept()
     server_loop = asyncio.get_running_loop()
+    if disconnect_task is not None:
+        disconnect_task.cancel()
+        disconnect_task = None
     first_client = not active_websockets
     previous_clients = tuple(active_websockets)
     active_websockets.add(websocket)
@@ -131,6 +136,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
             await previous.close(code=4001, reason="新しい接続に切り替わりました")
         except Exception:
             pass
+    close_code = None
     try:
         await websocket.send_text(json.dumps({"type": "init_settings", "settings": settings}))
         while True:
@@ -200,19 +206,38 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
                     settings["invert_scroll"] = bool(msg["invert_scroll"])
             elif t == "save_settings":
                 save_settings(settings)
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as exc:
+        close_code = exc.code
     except Exception:
+        close_code = None
         report_tray(None, "Phone-Mouse", "通信エラーが発生しました", True)
     finally:
         active_websockets.discard(websocket)
         if not active_websockets:
-            report_tray(False, "Phone-Mouse", "接続解除")
+            if close_code == 4002:
+                if disconnect_task is not None:
+                    disconnect_task.cancel()
+                    disconnect_task = None
+                report_tray(False, "Phone-Mouse", "QRコードが更新されました")
+            else:
+                if disconnect_task is not None:
+                    disconnect_task.cancel()
+                disconnect_task = asyncio.create_task(report_disconnect_after_grace())
+
+async def report_disconnect_after_grace():
+    global disconnect_task
+    try:
+        await asyncio.sleep(CONNECTION_GRACE_SECONDS)
+    except asyncio.CancelledError:
+        return
+    if not active_websockets:
+        report_tray(False, "Phone-Mouse", "24時間接続がなかったため接続解除")
+    disconnect_task = None
 
 async def disconnect_active_clients():
     for websocket in tuple(active_websockets):
         try:
-            await websocket.close(code=1008, reason="QRコードが更新されました")
+            await websocket.close(code=4002, reason="QRコードが更新されました")
         except Exception:
             pass
 
