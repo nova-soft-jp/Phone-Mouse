@@ -303,8 +303,12 @@
       document.getElementById("dot").classList.add("connected");
       document.getElementById("statusText").textContent = "接続中";
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       document.getElementById("dot").classList.remove("connected");
+      if (event.code === 4001) {
+        document.getElementById("statusText").textContent = "別の接続に切替済み";
+        return;
+      }
       document.getElementById("statusText").textContent = "再接続";
       setTimeout(connect, 800);
     };
