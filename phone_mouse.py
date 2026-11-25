@@ -121,21 +121,17 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
         return
     await websocket.accept()
     server_loop = asyncio.get_running_loop()
+    if active_websockets:
+        try:
+            await websocket.close(code=4005, reason="別のタブが接続中です")
+        except Exception:
+            pass
+        return
     if disconnect_task is not None:
         disconnect_task.cancel()
         disconnect_task = None
-    first_client = not active_websockets
-    previous_clients = tuple(active_websockets)
     active_websockets.add(websocket)
-    if first_client:
-        report_tray(True, "Phone-Mouse", "接続完了")
-    # Only the newest browser tab should control the PC. Keep the old page
-    # open, but close its socket so it cannot send duplicate input.
-    for previous in previous_clients:
-        try:
-            await previous.close(code=4001, reason="新しい接続に切り替わりました")
-        except Exception:
-            pass
+    report_tray(True, "Phone-Mouse", "接続完了")
     close_code = None
     try:
         await websocket.send_text(json.dumps({"type": "init_settings", "settings": settings}))
