@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Phone-Mouse" Width="900" Height="640" MinWidth="740" MinHeight="540"
+        Title="Phone-Mouse" Icon="pack://application:,,,/PhoneMouse;component/assets/phone_mouse.ico" Width="900" Height="640" MinWidth="740" MinHeight="540"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True"
         Background="{DynamicResource AppBackground}" Foreground="{DynamicResource MainText}">
     <Grid Background="{DynamicResource AppBackground}">

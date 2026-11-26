@@ -83,29 +83,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private static Icon CreateStatusIcon(bool isConnected)
     {
-        using var bitmap = new Bitmap(32, 32);
+        using var iconStream = typeof(MainWindow).Assembly.GetManifestResourceStream("PhoneMouse.Desktop.assets.phone_mouse.png")
+            ?? throw new InvalidOperationException("アプリアイコンを読み込めません。");
+        using var source = new Bitmap(iconStream);
+        using var bitmap = new Bitmap(source, 32, 32);
         using (var graphics = Graphics.FromImage(bitmap))
         using (var dot = new System.Drawing.SolidBrush(isConnected ? System.Drawing.Color.LimeGreen : System.Drawing.Color.Red))
         using (var outline = new System.Drawing.Pen(System.Drawing.Color.White, 1.5f))
         {
-            graphics.Clear(System.Drawing.Color.Transparent);
-            using (var mousePath = new GraphicsPath())
-            using (var body = new SolidBrush(System.Drawing.Color.FromArgb(45, 52, 62)))
-            using (var mouseOutline = new System.Drawing.Pen(System.Drawing.Color.White, 1.8f))
-            using (var detail = new System.Drawing.Pen(System.Drawing.Color.White, 1.4f))
-            {
-                mousePath.StartFigure();
-                mousePath.AddArc(8, 2, 16, 16, 180, 180);
-                mousePath.AddLine(24, 10, 24, 21);
-                mousePath.AddArc(8, 14, 16, 16, 0, 180);
-                mousePath.AddLine(8, 22, 8, 10);
-                mousePath.CloseFigure();
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                graphics.FillPath(body, mousePath);
-                graphics.DrawPath(mouseOutline, mousePath);
-                graphics.DrawLine(detail, 16, 4, 16, 14);
-                graphics.DrawLine(detail, 12, 14, 20, 14);
-            }
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
             graphics.FillEllipse(dot, 20, 20, 11, 11);
             graphics.DrawEllipse(outline, 20, 20, 11, 11);
         }

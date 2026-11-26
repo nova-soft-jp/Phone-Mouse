@@ -19,7 +19,7 @@ import qrcode
 import pyautogui
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0
@@ -109,6 +109,14 @@ async def index():
         content=content,
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
     )
+
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(get_resource_path(os.path.join("assets", "favicon.ico")), media_type="image/vnd.microsoft.icon")
+
+@app.get("/apple-touch-icon.png")
+async def apple_touch_icon():
+    return FileResponse(get_resource_path(os.path.join("assets", "apple-touch-icon.png")), media_type="image/png")
 
 rem_x = 0.0
 rem_y = 0.0
@@ -321,11 +329,8 @@ def add_tray_icon(root):
 
     def make_icon(connected):
         from PIL import ImageDraw
-        icon_image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        icon_image = Image.open(get_resource_path(os.path.join("assets", "phone_mouse.png"))).convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
         draw = ImageDraw.Draw(icon_image)
-        draw.rounded_rectangle((11, 5, 53, 57), radius=18, fill="#e6edf3",
-                               outline="#58a6ff", width=4)
-        draw.line((32, 8, 32, 25), fill="#58a6ff", width=3)
         dot_color = "#3fb950" if connected else "#f85149"
         draw.ellipse((38, 39, 62, 63), fill=dot_color, outline="#0d1117", width=3)
         file_handle, icon_path = tempfile.mkstemp(suffix=".ico")
@@ -482,6 +487,10 @@ def main():
 
     root = tk.Tk()
     root.title("Phone-Mouse")
+    try:
+        root.iconbitmap(get_resource_path(os.path.join("assets", "phone_mouse.ico")))
+    except tk.TclError:
+        pass
     root.configure(bg="#0d1117")
     root.geometry("520x700")
     root.minsize(360, 500)

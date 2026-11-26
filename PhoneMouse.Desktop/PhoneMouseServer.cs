@@ -54,9 +54,20 @@ public sealed class PhoneMouseServer : IAsyncDisposable
             context.Response.ContentType = "text/html; charset=utf-8";
             await stream.CopyToAsync(context.Response.Body);
         });
+        app.MapGet("/favicon.ico", context => WriteEmbeddedIconAsync(context, "PhoneMouse.Desktop.assets.favicon.ico", "image/vnd.microsoft.icon"));
+        app.MapGet("/apple-touch-icon.png", context => WriteEmbeddedIconAsync(context, "PhoneMouse.Desktop.assets.apple-touch-icon.png", "image/png"));
         app.Map("/ws", HandleSocketAsync);
         await app.StartAsync();
         Publish(null);
+    }
+
+    private static async Task WriteEmbeddedIconAsync(HttpContext context, string resourceName, string contentType)
+    {
+        await using var stream = typeof(PhoneMouseServer).Assembly.GetManifestResourceStream(resourceName);
+        if (stream is null) { context.Response.StatusCode = 404; return; }
+        context.Response.ContentType = contentType;
+        context.Response.Headers.CacheControl = "public, max-age=86400";
+        await stream.CopyToAsync(context.Response.Body);
     }
 
     public async Task RefreshAsync()
@@ -140,7 +151,53 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private static void Click(bool right){mouse_event((uint)(right?8:2),0,0,0,0);mouse_event((uint)(right?16:4),0,0,0,0);}
     private static void Press(int vk){keybd_event((byte)vk,0,0,UIntPtr.Zero);keybd_event((byte)vk,0,2,UIntPtr.Zero);}
     private static string NewToken()=>Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(12)).TrimEnd('=').Replace('+','-').Replace('/','_');
-    private static string GetLocalIp(){try{return NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up).SelectMany(n=>n.GetIPProperties().UnicastAddresses).First(a=>a.Address.AddressFamily==AddressFamily.InterNetwork&&!IPAddress.IsLoopback(a.Address)).Address.ToString();}catch{return "127.0.0.1";}}
+    private static string GetLocalIp()
+    {
+        // Ask Windows which local address it would use for an outbound route.
+        // UDP Connect only selects the route; it does not send a packet.
+        try
+        {
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            socket.Connect(IPAddress.Parse("8.8.8.8"), 80);
+            if (socket.LocalEndPoint is IPEndPoint endpoint && IsUsableLanAddress(endpoint.Address))
+                return endpoint.Address.ToString();
+        }
+        catch { }
+
+        // Offline fallback: prefer a real Wi-Fi/Ethernet adapter with a gateway.
+        try
+        {
+            var candidates = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(adapter => adapter.OperationalStatus == OperationalStatus.Up
+                    && adapter.NetworkInterfaceType is NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.Ethernet)
+                .SelectMany(adapter =>
+                {
+                    var properties = adapter.GetIPProperties();
+                    var hasGateway = properties.GatewayAddresses.Any(gateway =>
+                        gateway.Address.AddressFamily == AddressFamily.InterNetwork
+                        && !gateway.Address.Equals(IPAddress.Any));
+                    var priority = adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? 0 : 1;
+                    return properties.UnicastAddresses
+                        .Where(address => IsUsableLanAddress(address.Address))
+                        .Select(address => (Address: address.Address, HasGateway: hasGateway, Priority: priority));
+                })
+                .OrderByDescending(candidate => candidate.HasGateway)
+                .ThenBy(candidate => candidate.Priority)
+                .FirstOrDefault();
+            if (candidates.Address is not null)
+                return candidates.Address.ToString();
+        }
+        catch { }
+        return "127.0.0.1";
+    }
+
+    private static bool IsUsableLanAddress(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(address))
+            return false;
+        var octets = address.GetAddressBytes();
+        return octets[0] != 0 && !(octets[0] == 169 && octets[1] == 254);
+    }
     private static byte[] MakeQr(string value){if(string.IsNullOrEmpty(value))return [];using var qr=new QRCodeGenerator().CreateQrCode(value,QRCodeGenerator.ECCLevel.Q);return new PngByteQRCode(qr).GetGraphic(8);}
     private void Publish(string? notice=null,bool? connected=null,bool error=false)=>Updated?.Invoke(new(url,MakeQr(url),connected??(active?.State==WebSocketState.Open),notice,error));
     private void LoadSettings(){try{if(!File.Exists(settingsPath))return;using var d=JsonDocument.Parse(File.ReadAllText(settingsPath));var r=d.RootElement;if(r.TryGetProperty("sensitivity",out var a))sensitivity=a.GetDouble();if(r.TryGetProperty("scroll_speed",out var b))scrollSpeed=b.GetDouble();if(r.TryGetProperty("invert_scroll",out var c))invertScroll=c.GetBoolean();}catch{}}

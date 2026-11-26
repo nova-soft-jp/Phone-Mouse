@@ -9,11 +9,16 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ApplicationIcon>..\assets\phone_mouse.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <EmbeddedResource Include="..\index.html" Link="index.html" LogicalName="PhoneMouse.Desktop.index.html" />
+    <Resource Include="..\assets\phone_mouse.ico" Link="assets\phone_mouse.ico" />
+    <EmbeddedResource Include="..\assets\phone_mouse.png" Link="assets\phone_mouse.png" LogicalName="PhoneMouse.Desktop.assets.phone_mouse.png" />
+    <EmbeddedResource Include="..\assets\favicon.ico" Link="assets\favicon.ico" LogicalName="PhoneMouse.Desktop.assets.favicon.ico" />
+    <EmbeddedResource Include="..\assets\apple-touch-icon.png" Link="assets\apple-touch-icon.png" LogicalName="PhoneMouse.Desktop.assets.apple-touch-icon.png" />
   </ItemGroup>
 
   <ItemGroup>
