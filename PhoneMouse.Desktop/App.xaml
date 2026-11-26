@@ -1,0 +1,56 @@
+<Application x:Class="PhoneMouse.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <SolidColorBrush x:Key="AppBackground" Color="#101318" />
+            <SolidColorBrush x:Key="SidebarBackground" Color="#151A21" />
+            <SolidColorBrush x:Key="PanelBackground" Color="#171D25" />
+            <SolidColorBrush x:Key="PanelBorder" Color="#2B3440" />
+            <SolidColorBrush x:Key="MainText" Color="#E9EDF4" />
+            <SolidColorBrush x:Key="SecondaryText" Color="#AAB4C2" />
+            <SolidColorBrush x:Key="ButtonSurface" Color="#252B34" />
+            <SolidColorBrush x:Key="ButtonHoverSurface" Color="#343D49" />
+            <SolidColorBrush x:Key="ButtonText" Color="#F5F7FA" />
+            <SolidColorBrush x:Key="AccentSurface" Color="#C98BE3" />
+            <SolidColorBrush x:Key="AccentHoverSurface" Color="#D6A5EA" />
+            <SolidColorBrush x:Key="AccentText" Color="#1D1522" />
+            <Style x:Key="FlatActionButton" TargetType="Button">
+                <Setter Property="Padding" Value="12,8"/><Setter Property="Margin" Value="0"/>
+                <Setter Property="Foreground" Value="{DynamicResource ButtonText}"/><Setter Property="Background" Value="{DynamicResource ButtonSurface}"/>
+                <Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonHoverSurface}"/></Trigger>
+                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Opacity" Value="0.78"/></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
+            <Style x:Key="PrimaryActionButton" TargetType="Button" BasedOn="{StaticResource FlatActionButton}">
+                <Setter Property="Foreground" Value="{DynamicResource AccentText}"/><Setter Property="Background" Value="{DynamicResource AccentSurface}"/>
+                <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource AccentHoverSurface}"/></Trigger></Style.Triggers>
+            </Style>
+            <Style x:Key="MenuNavigationButton" TargetType="Button">
+                <Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="0,2"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Foreground" Value="{DynamicResource MainText}"/>
+                <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonHoverSurface}"/></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

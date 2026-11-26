@@ -1,0 +1,179 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Media.Animation;
+using System.Windows.Forms;
+using Microsoft.Win32;
+using Wpf.Ui.Appearance;
+
+namespace PhoneMouse.Desktop;
+
+public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
+{
+    private readonly PhoneMouseServer server = new();
+    private NotifyIcon? tray;
+    private bool exiting;
+    private bool connected;
+    private bool menuOpen;
+    private bool darkTheme = true;
+    public MainWindow()
+    {
+        InitializeComponent();
+        LoadThemePreference();
+        ApplyTheme(darkTheme, false);
+        Loaded += OnLoaded;
+        Closing += OnClosing;
+        SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
+        server.Updated += OnServerUpdated;
+    }
+
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        CreateTray();
+        try { await server.StartAsync(); }
+        catch (Exception ex) { OnServerUpdated(new(server.Current.Url, server.Current.Qr, false, $"サーバーを開始できませんでした: {ex.Message}", true)); }
+    }
+
+    private void CreateTray()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Phone-Mouseを表示", null, (_, _) => RestoreWindow());
+        menu.Items.Add("終了", null, async (_, _) => { exiting = true; tray!.Visible = false; await server.DisposeAsync(); Close(); });
+        tray = new NotifyIcon { Icon = CreateStatusIcon(false), Text = "Phone-Mouse - 未接続", ContextMenuStrip = menu, Visible = true };
+        tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) RestoreWindow(); };
+    }
+
+    private void OnServerUpdated(ServerUpdate update)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            UrlText.Text = update.Url;
+            if (update.Qr.Length > 0)
+            {
+                using var ms = new MemoryStream(update.Qr);
+                var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.StreamSource = ms; bitmap.EndInit(); bitmap.Freeze(); QrImage.Source = bitmap;
+            }
+            connected = update.Connected;
+            var dotColor = update.Connected ? System.Windows.Media.Color.FromRgb(55, 205, 125) : System.Windows.Media.Color.FromRgb(240, 82, 82);
+            var textColor = update.Connected ? System.Windows.Media.Color.FromRgb(91, 224, 153) : System.Windows.Media.Color.FromRgb(248, 113, 113);
+            StatusDot.Fill = new SolidColorBrush(dotColor);
+            MenuStatusDot.Fill = new SolidColorBrush(dotColor);
+            StatusText.Text = MenuStatusText.Text = update.Connected ? "接続中" : "未接続";
+            StatusText.Foreground = MenuStatusText.Foreground = new SolidColorBrush(textColor);
+            if (tray is not null)
+            {
+                var oldIcon = tray.Icon;
+                tray.Icon = CreateStatusIcon(update.Connected);
+                oldIcon?.Dispose();
+                tray.Text = update.Connected ? "Phone-Mouse - 接続中" : "Phone-Mouse - 未接続";
+            }
+            if (update.Notice is not null && tray is not null)
+                tray.ShowBalloonTip(3000, update.IsError ? "Phone-Mouse - エラー" : "Phone-Mouse", update.Notice, update.IsError ? ToolTipIcon.Error : ToolTipIcon.Info);
+        });
+    }
+
+    private static Icon CreateStatusIcon(bool isConnected)
+    {
+        using var bitmap = new Bitmap(32, 32);
+        using (var graphics = Graphics.FromImage(bitmap))
+        using (var dot = new System.Drawing.SolidBrush(isConnected ? System.Drawing.Color.LimeGreen : System.Drawing.Color.Red))
+        using (var outline = new System.Drawing.Pen(System.Drawing.Color.White, 1.5f))
+        {
+            graphics.Clear(System.Drawing.Color.Transparent);
+            using (var mousePath = new GraphicsPath())
+            using (var body = new SolidBrush(System.Drawing.Color.FromArgb(45, 52, 62)))
+            using (var mouseOutline = new System.Drawing.Pen(System.Drawing.Color.White, 1.8f))
+            using (var detail = new System.Drawing.Pen(System.Drawing.Color.White, 1.4f))
+            {
+                mousePath.StartFigure();
+                mousePath.AddArc(8, 2, 16, 16, 180, 180);
+                mousePath.AddLine(24, 10, 24, 21);
+                mousePath.AddArc(8, 14, 16, 16, 0, 180);
+                mousePath.AddLine(8, 22, 8, 10);
+                mousePath.CloseFigure();
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.FillPath(body, mousePath);
+                graphics.DrawPath(mouseOutline, mousePath);
+                graphics.DrawLine(detail, 16, 4, 16, 14);
+                graphics.DrawLine(detail, 12, 14, 20, 14);
+            }
+            graphics.FillEllipse(dot, 20, 20, 11, 11);
+            graphics.DrawEllipse(outline, 20, 20, 11, 11);
+        }
+        var handle = bitmap.GetHicon();
+        try { using var temporary = System.Drawing.Icon.FromHandle(handle); return (System.Drawing.Icon)temporary.Clone(); }
+        finally { DestroyIcon(handle); }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(nint handle);
+
+    private async void RefreshQr_Click(object sender, RoutedEventArgs e) => await server.RefreshAsync();
+    private void CopyUrl_Click(object sender, RoutedEventArgs e) { if (!string.IsNullOrWhiteSpace(UrlText.Text)) { System.Windows.Clipboard.SetText(UrlText.Text); if (tray is not null) tray.ShowBalloonTip(1800, "Phone-Mouse", "URLをコピーしました", ToolTipIcon.Info); } }
+    private void Nav_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button b) return;
+        var key = b.Tag?.ToString() ?? "home";
+        HomeView.Visibility = key == "home" ? Visibility.Visible : Visibility.Collapsed;
+        DetailView.Visibility = key is not ("home" or "settings") ? Visibility.Visible : Visibility.Collapsed;
+        SettingsView.Visibility = key == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        if (key is not ("home" or "settings")) (DetailTitle.Text, DetailText.Text) = key switch
+        {
+            "guide" => ("接続ガイド", "1. PCとスマートフォンを同じWi-Fiに接続します。\n\n2. スマートフォンのカメラでホーム画面のQRコードを読み取り、表示されたURLを開きます。\n\n3. 接続中の表示になれば準備完了です。\n\n接続できない場合は、PCとスマートフォンが同じネットワークにいるか、WindowsのファイアウォールでPhone-Mouseが許可されているか確認してください。QRコードを更新すると古いリンクは使えなくなります。"),
+            "controls" => ("スマートフォンでの操作", "1本指でなぞる：カーソル移動\n\n1本指でタップ：左クリック（すばやく2回でダブルクリック）\n\n2本指でタップ：右クリック\n\n2本指で上下に動かす：スクロール\n\n押したまま動かす：ドラッグ\n\n左右スワイプ：前／次のページ\n\n上部の入力欄：PCへ文字を送信"),
+            "window" => ("ウィンドウと終了", "ウィンドウ右上の「×」で閉じても、アプリは終了せず通知領域に残り、スマートフォンとの接続も続きます。\n\nアプリをもう一度表示するには、タスクバー右下の通知領域にあるPhone-Mouseアイコンをクリックします。\n\n完全に終了するときは、通知領域のPhone-Mouseアイコンを右クリックして「終了」を選んでください。"),
+            _ => ("接続できないとき", "・PCとスマートフォンが同じWi-Fiに接続されているか確認してください。\n\n・QRコードを更新した場合は、新しいQRコードを読み取ってください。\n\n・スマートフォン側で前の接続タブを閉じてから、もう一度QRコードを読み取ってください。\n\n・Windowsのファイアウォールが通信を止めていないか確認してください。")
+        };
+        SetMenuOpen(false);
+    }
+
+    private void MenuToggle_Click(object sender, RoutedEventArgs e) => SetMenuOpen(!menuOpen);
+    private void MenuScrim_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e) => SetMenuOpen(false);
+    private void SetMenuOpen(bool open)
+    {
+        if (menuOpen == open) return;
+        menuOpen = open;
+        var transform = (TranslateTransform)NavigationDrawer.RenderTransform;
+        NavigationDrawer.IsHitTestVisible = open;
+        if (open) { NavigationDrawer.Visibility = Visibility.Visible; MenuScrim.Visibility = Visibility.Visible; }
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(open ? 0 : -280, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
+        var scrimAnimation = new DoubleAnimation(open ? 0.42 : 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease };
+        scrimAnimation.Completed += (_, _) => { if (!open) { NavigationDrawer.Visibility = Visibility.Collapsed; MenuScrim.Visibility = Visibility.Collapsed; } };
+        MenuScrim.BeginAnimation(OpacityProperty, scrimAnimation);
+    }
+
+    private void DarkTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme(true, true);
+    private void LightTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme(false, true);
+    private void ApplyTheme(bool dark, bool save)
+    {
+        darkTheme = dark;
+        AppTitleBar.ApplicationTheme = dark ? ApplicationTheme.Dark : ApplicationTheme.Light;
+        SetBrush("AppBackground", dark ? "#101318" : "#F5F7FA");
+        SetBrush("SidebarBackground", dark ? "#151A21" : "#E9EDF3");
+        SetBrush("PanelBackground", dark ? "#171D25" : "#FFFFFF");
+        SetBrush("PanelBorder", dark ? "#2B3440" : "#D5DCE5");
+        SetBrush("MainText", dark ? "#E9EDF4" : "#202833");
+        SetBrush("SecondaryText", dark ? "#AAB4C2" : "#586575");
+        SetBrush("ButtonSurface", dark ? "#252B34" : "#E3E8EE");
+        SetBrush("ButtonHoverSurface", dark ? "#343D49" : "#D3DAE3");
+        SetBrush("ButtonText", dark ? "#F5F7FA" : "#202833");
+        SetBrush("AccentSurface", dark ? "#C98BE3" : "#B76CD1");
+        SetBrush("AccentHoverSurface", dark ? "#D6A5EA" : "#A95DC5");
+        SetBrush("AccentText", "#24152B");
+        ThemeStatus.Text = dark ? "現在：ダーク" : "現在：ライト";
+        DarkThemeButton.IsEnabled = !dark;
+        LightThemeButton.IsEnabled = dark;
+        if (save) try { Directory.CreateDirectory(Path.GetDirectoryName(ThemePath)!); File.WriteAllText(ThemePath, dark ? "dark" : "light"); } catch { }
+    }
+    private static void SetBrush(string key, string color) => System.Windows.Application.Current.Resources[key] = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
+    private string ThemePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PhoneMouse", "ui-theme.txt");
+    private void LoadThemePreference() { try { darkTheme = !File.Exists(ThemePath) || File.ReadAllText(ThemePath).Trim() != "light"; } catch { darkTheme = true; } }
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } else { tray?.Dispose(); SystemEvents.DisplaySettingsChanged -= OnDisplayChanged; } }
+    private void RestoreWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void OnDisplayChanged(object? sender, EventArgs e) { }
+}
