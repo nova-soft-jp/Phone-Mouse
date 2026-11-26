@@ -5,9 +5,9 @@ PCに表示されるQRコードをスマートフォンで読み取ると、ブ�
 
 ## ダウンロード
 
-### [Windows版 PhoneMouse.zip をダウンロード](https://github.com/nova-soft-jp/Phone-Mouse/raw/refs/heads/main/PhoneMouse.zip)
+### [Windows版 PhoneMouse.exe をダウンロード](https://github.com/nova-soft-jp/Phone-Mouse/raw/refs/heads/main/PhoneMouse.exe)
 
-ダウンロードしたZIPを展開し、中の **PhoneMouse.exe** を起動してください。インストールは不要です。
+ダウンロードした **PhoneMouse.exe** を起動してください。インストールは不要です。
 
 ## できること
 
@@ -20,7 +20,7 @@ PCに表示されるQRコードをスマートフォンで読み取ると、ブ�
 ## 使い方
 
 1. PCとスマートフォンを同じWi-Fiに接続します。
-2. ZIPを展開し、PCで **PhoneMouse.exe** を起動します。
+2. PCで **PhoneMouse.exe** を起動し、画面のQRコードを表示します。
 3. スマートフォンのカメラでQRコードを読み取ります。
 4. 表示されたURLを開くと、スマートフォンから操作できます。
 
