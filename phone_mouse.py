@@ -19,7 +19,7 @@ import qrcode
 import pyautogui
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0
@@ -82,6 +82,29 @@ server_loop = None
 active_websockets = set()
 disconnect_task = None
 tray_report = None
+session_active = False
+single_instance_mutex_handle = None
+
+def acquire_single_instance():
+    global single_instance_mutex_handle
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    mutex_handle = kernel32.CreateMutexW(None, 1, r"Local\PhoneMouse.SingleInstance.2026")
+    if not mutex_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        kernel32.CloseHandle(mutex_handle)
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "Phone-Mouseはすでに起動しています。2つ目の起動を終了します。\n右下の通知領域にあるアイコンから表示できます。",
+            "Phone-Mouseは起動中です",
+            0x30,  # MB_OK | MB_ICONWARNING
+        )
+        return False
+    single_instance_mutex_handle = mutex_handle
+    return True
 
 def report_tray(connected=None, title=None, message=None, is_error=False):
     if tray_report is not None:
@@ -118,12 +141,17 @@ async def favicon():
 async def apple_touch_icon():
     return FileResponse(get_resource_path(os.path.join("assets", "apple-touch-icon.png")), media_type="image/png")
 
+@app.get("/check")
+async def check_connection_token(token: str = Query("")):
+    status_code = 204 if token == TOKEN else 410
+    return Response(status_code=status_code, headers={"Cache-Control": "no-store"})
+
 rem_x = 0.0
 rem_y = 0.0
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
-    global rem_x, rem_y, settings, server_loop, disconnect_task
+    global rem_x, rem_y, settings, server_loop, disconnect_task, session_active
     if token != TOKEN:
         await websocket.close(code=1008)
         return
@@ -138,8 +166,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
     if disconnect_task is not None:
         disconnect_task.cancel()
         disconnect_task = None
+    is_new_session = not session_active
+    session_active = True
     active_websockets.add(websocket)
-    report_tray(True, "Phone-Mouse", "接続完了")
+    report_tray(True, "Phone-Mouse" if is_new_session else None,
+                "接続完了" if is_new_session else None)
     close_code = None
     try:
         await websocket.send_text(json.dumps({"type": "init_settings", "settings": settings}))
@@ -147,7 +178,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
             raw = await websocket.receive_text()
             msg = json.loads(raw)
             t = msg.get("type")
-            if t == "move":
+            if t == "ping":
+                await websocket.send_text(json.dumps({"type": "pong", "id": msg.get("id")}))
+                continue
+            elif t == "quality":
+                continue
+            elif t == "move":
                 sens = float(settings.get("sensitivity", 1.3))
                 rem_x += float(msg.get("dx", 0)) * sens
                 rem_y += float(msg.get("dy", 0)) * sens
@@ -214,32 +250,33 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
         close_code = exc.code
     except Exception:
         close_code = None
-        report_tray(None, "Phone-Mouse", "通信エラーが発生しました", True)
     finally:
         active_websockets.discard(websocket)
         if not active_websockets:
-            if close_code in (4002, 4004, 1000, 1001):
+            if close_code == 4002:
                 if disconnect_task is not None:
                     disconnect_task.cancel()
                     disconnect_task = None
-                message = (
-                    "QRコードが更新されました"
-                    if close_code == 4002
-                    else "スマホのタブが閉じられました"
-                )
-                report_tray(False, "Phone-Mouse", message)
+                session_active = False
+                report_tray(False)
             else:
+                # Explicit pagehide (4004) means the control tab was closed.
+                # Show disconnected immediately, but retain the session for the
+                # one-day grace period so reopening does not create a new session.
+                if close_code == 4004:
+                    report_tray(False)
                 if disconnect_task is not None:
                     disconnect_task.cancel()
                 disconnect_task = asyncio.create_task(report_disconnect_after_grace())
 
 async def report_disconnect_after_grace():
-    global disconnect_task
+    global disconnect_task, session_active
     try:
         await asyncio.sleep(CONNECTION_GRACE_SECONDS)
     except asyncio.CancelledError:
         return
     if not active_websockets:
+        session_active = False
         report_tray(False, "Phone-Mouse", "24時間接続がなかったため接続解除")
     disconnect_task = None
 
@@ -482,6 +519,8 @@ def set_dark_title_bar(root):
         root._titlebar_dwm_error = str(exc)
 
 def main():
+    if not acquire_single_instance():
+        return
     ip = get_local_ip()
     url = f"http://{ip}:{PORT}/?token={TOKEN}"
 

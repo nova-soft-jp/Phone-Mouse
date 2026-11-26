@@ -19,7 +19,7 @@ using QRCoder;
 
 namespace PhoneMouse.Desktop;
 
-public sealed record ServerUpdate(string Url, byte[] Qr, bool Connected, string? Notice = null, bool IsError = false);
+public sealed record ServerUpdate(string Url, byte[] Qr, bool Connected, string? Notice = null, bool IsError = false, int SignalBars = 0, bool PhonePageOpened = false, bool IsConnectionNotice = false, bool IsDisconnectNotice = false);
 
 public sealed class PhoneMouseServer : IAsyncDisposable
 {
@@ -29,18 +29,25 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private WebApplication? app;
     private WebSocket? active;
     private CancellationTokenSource? grace;
+    private bool sessionActive;
+    private bool phonePageOpened;
     private string token = NewToken();
     private string url = "";
     private double sensitivity = 1.3, scrollSpeed = 1.0, remX, remY;
     private bool invertScroll;
+    private int signalBars;
     private readonly string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PhoneMouse", "settings.json");
     public event Action<ServerUpdate>? Updated;
-    public ServerUpdate Current => new(url, MakeQr(url), active?.State == WebSocketState.Open);
+    public ServerUpdate Current => new(url, MakeQr(url), active?.State == WebSocketState.Open, SignalBars: signalBars, PhonePageOpened: phonePageOpened);
 
     public async Task StartAsync()
     {
         LoadSettings();
-        url = $"http://{GetLocalIp()}:{Port}/?token={token}";
+        var localIp = GetLocalIp();
+        url = $"http://{localIp}:{Port}/?token={token}";
+        if (!IPAddress.TryParse(localIp, out var localAddress) || !IsUsableLanAddress(localAddress))
+            throw new InvalidOperationException("PCがWi-FiまたはLANに接続されていません。PCをネットワークに接続してからPhone-Mouseを再起動してください。");
+        EnsurePortAvailable();
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://0.0.0.0:{Port}");
         builder.Services.AddRouting();
@@ -49,6 +56,11 @@ public sealed class PhoneMouseServer : IAsyncDisposable
         app.MapGet("/", async context =>
         {
             context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+            if (context.Request.Query["token"] == token && !phonePageOpened)
+            {
+                phonePageOpened = true;
+                Publish();
+            }
             await using var stream = typeof(PhoneMouseServer).Assembly.GetManifestResourceStream("PhoneMouse.Desktop.index.html");
             if (stream is null) { context.Response.StatusCode = 500; return; }
             context.Response.ContentType = "text/html; charset=utf-8";
@@ -56,9 +68,26 @@ public sealed class PhoneMouseServer : IAsyncDisposable
         });
         app.MapGet("/favicon.ico", context => WriteEmbeddedIconAsync(context, "PhoneMouse.Desktop.assets.favicon.ico", "image/vnd.microsoft.icon"));
         app.MapGet("/apple-touch-icon.png", context => WriteEmbeddedIconAsync(context, "PhoneMouse.Desktop.assets.apple-touch-icon.png", "image/png"));
+        app.MapGet("/check", context =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.StatusCode = context.Request.Query["token"] == token ? StatusCodes.Status204NoContent : StatusCodes.Status410Gone;
+            return Task.CompletedTask;
+        });
         app.Map("/ws", HandleSocketAsync);
         await app.StartAsync();
         Publish(null);
+    }
+
+    private static void EnsurePortAvailable()
+    {
+        var probe = new TcpListener(IPAddress.Any, Port);
+        try { probe.Start(); }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+        {
+            throw new InvalidOperationException($"接続用ポート {Port} が別のアプリで使用中です。通知領域のPhone-Mouseがすでに起動していないか確認してください。", ex);
+        }
+        finally { probe.Stop(); }
     }
 
     private static async Task WriteEmbeddedIconAsync(HttpContext context, string resourceName, string contentType)
@@ -73,7 +102,15 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     public async Task RefreshAsync()
     {
         token = NewToken(); url = $"http://{GetLocalIp()}:{Port}/?token={token}";
-        WebSocket? socket; lock (gate) socket = active;
+        WebSocket? socket;
+        lock (gate)
+        {
+            socket = active;
+            sessionActive = false;
+            signalBars = 0;
+            phonePageOpened = false;
+            grace?.Cancel(); grace?.Dispose(); grace = null;
+        }
         if (socket?.State == WebSocketState.Open)
             try { await socket.CloseAsync((WebSocketCloseStatus)4002, "QRコードが更新されました", CancellationToken.None); } catch { }
         Publish("QRコードを更新しました");
@@ -84,6 +121,7 @@ public sealed class PhoneMouseServer : IAsyncDisposable
         if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = 400; return; }
         if (ctx.Request.Query["token"] != token) { ctx.Response.StatusCode = 403; return; }
         var socket = await ctx.WebSockets.AcceptWebSocketAsync();
+        bool newSession;
         lock (gate)
         {
             if (active?.State == WebSocketState.Open)
@@ -91,9 +129,11 @@ public sealed class PhoneMouseServer : IAsyncDisposable
                 _ = socket.CloseAsync((WebSocketCloseStatus)4005, "別のタブが接続中です", CancellationToken.None);
                 return;
             }
-            active = socket; grace?.Cancel(); grace?.Dispose(); grace = null;
+            newSession = !sessionActive;
+            sessionActive = true;
+            active = socket; signalBars = 0; grace?.Cancel(); grace?.Dispose(); grace = null;
         }
-        Publish("接続完了", true);
+        Publish(newSession ? "接続完了" : null, true, connectionNotice: newSession);
         try
         {
             await SendJson(socket, new { type = "init_settings", settings = new { sensitivity, scroll_speed = scrollSpeed, invert_scroll = invertScroll } }, ctx.RequestAborted);
@@ -104,19 +144,39 @@ public sealed class PhoneMouseServer : IAsyncDisposable
                 do { result = await socket.ReceiveAsync(buffer, ctx.RequestAborted); if (result.MessageType == WebSocketMessageType.Close) break; ms.Write(buffer, 0, result.Count); }
                 while (!result.EndOfMessage);
                 if (result.MessageType == WebSocketMessageType.Close) break;
-                using var doc = JsonDocument.Parse(ms.ToArray()); Process(doc.RootElement);
+                using var doc = JsonDocument.Parse(ms.ToArray());
+                if (GetString(doc.RootElement, "type") == "ping")
+                    await SendJson(socket, new { type = "pong", id = GetString(doc.RootElement, "id") }, ctx.RequestAborted);
+                else
+                    Process(doc.RootElement);
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { Publish("通信エラーが発生しました", null, true); }
+        catch (WebSocketException) { }
+        catch (IOException) { }
+        catch (Exception) { }
         finally
         {
             bool wasCurrent; lock (gate) { wasCurrent = ReferenceEquals(active, socket); if (wasCurrent) active = null; }
             if (wasCurrent)
             {
+                signalBars = 0;
                 var code = (int?)socket.CloseStatus ?? 1006;
-                if (code is 4002 or 4004 or 1000 or 1001) Publish(code == 4002 ? "QRコードが更新されました" : "スマホのタブが閉じられました", false);
-                else { lock (gate) { grace?.Cancel(); grace?.Dispose(); grace = new(); } _ = GraceDisconnectAsync(grace); }
+                if (code == 4002)
+                {
+                    lock (gate) sessionActive = false;
+                    Publish(null, false);
+                }
+                else
+                {
+                    // Mobile browsers can pause or close the socket when sent to the background.
+                    // Keep this as a one-day grace session and avoid repeated balloon notifications.
+                    // An explicit pagehide (4004) means the user closed/navigated away from the
+                    // control tab, so show disconnected while retaining the grace session.
+                    Publish(null, code != 4004);
+                    lock (gate) { grace?.Cancel(); grace?.Dispose(); grace = new(); }
+                    _ = GraceDisconnectAsync(grace);
+                }
             }
             socket.Dispose();
         }
@@ -125,7 +185,18 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private async Task GraceDisconnectAsync(CancellationTokenSource? cts)
     {
         if (cts is null) return;
-        try { await Task.Delay(GraceMs, cts.Token); lock (gate) { if (active is not null) return; } Publish("24時間接続がなかったため接続解除", false); }
+        try
+        {
+            await Task.Delay(GraceMs, cts.Token);
+            lock (gate)
+            {
+                if (active is not null) return;
+                sessionActive = false;
+                phonePageOpened = false;
+                if (ReferenceEquals(grace, cts)) { grace.Dispose(); grace = null; }
+            }
+            Publish("24時間再接続がなかったため接続を解除しました", false, disconnectNotice: true);
+        }
         catch (OperationCanceledException) { }
     }
 
@@ -143,6 +214,10 @@ public sealed class PhoneMouseServer : IAsyncDisposable
             case "type_text": var text=GetString(m,"text"); if(text.Length>0) System.Windows.Application.Current.Dispatcher.BeginInvoke(() => { System.Windows.Clipboard.SetText(text); keybd_event(0x11,0,0,UIntPtr.Zero); keybd_event(0x56,0,0,UIntPtr.Zero); keybd_event(0x56,0,2,UIntPtr.Zero); keybd_event(0x11,0,2,UIntPtr.Zero); }); break;
             case "preview_settings": sensitivity=num("sensitivity",sensitivity);scrollSpeed=num("scroll_speed",scrollSpeed);if(m.TryGetProperty("invert_scroll",out var inv))invertScroll=inv.GetBoolean();break;
             case "save_settings": SaveSettings();break;
+            case "quality":
+                var bars = Math.Clamp((int)num("bars"), 0, 3);
+                if (bars != signalBars) { signalBars = bars; Publish(); }
+                break;
         }
     }
 
@@ -199,7 +274,7 @@ public sealed class PhoneMouseServer : IAsyncDisposable
         return octets[0] != 0 && !(octets[0] == 169 && octets[1] == 254);
     }
     private static byte[] MakeQr(string value){if(string.IsNullOrEmpty(value))return [];using var qr=new QRCodeGenerator().CreateQrCode(value,QRCodeGenerator.ECCLevel.Q);return new PngByteQRCode(qr).GetGraphic(8);}
-    private void Publish(string? notice=null,bool? connected=null,bool error=false)=>Updated?.Invoke(new(url,MakeQr(url),connected??(active?.State==WebSocketState.Open),notice,error));
+    private void Publish(string? notice=null,bool? connected=null,bool error=false,bool connectionNotice=false,bool disconnectNotice=false)=>Updated?.Invoke(new(url,MakeQr(url),connected??(active?.State==WebSocketState.Open),notice,error,signalBars,phonePageOpened,connectionNotice,disconnectNotice));
     private void LoadSettings(){try{if(!File.Exists(settingsPath))return;using var d=JsonDocument.Parse(File.ReadAllText(settingsPath));var r=d.RootElement;if(r.TryGetProperty("sensitivity",out var a))sensitivity=a.GetDouble();if(r.TryGetProperty("scroll_speed",out var b))scrollSpeed=b.GetDouble();if(r.TryGetProperty("invert_scroll",out var c))invertScroll=c.GetBoolean();}catch{}}
     private void SaveSettings(){try{Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);File.WriteAllText(settingsPath,JsonSerializer.Serialize(new{sensitivity,scroll_speed=scrollSpeed,invert_scroll=invertScroll},new JsonSerializerOptions{WriteIndented=true}));}catch{}}
     public async ValueTask DisposeAsync(){if(app is not null){await app.StopAsync();await app.DisposeAsync();}lock(gate){grace?.Cancel();grace?.Dispose();}}

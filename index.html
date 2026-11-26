@@ -57,6 +57,26 @@
     background: #3fb950;
     box-shadow: 0 0 8px #3fb950;
   }
+  .signal-icon {
+    width: 21px;
+    height: 19px;
+    color: #e6edf3;
+    flex-shrink: 0;
+  }
+  .signal-icon .quality-arc { display: none; }
+  .connection-alert {
+    display: none;
+    margin: 8px 10px;
+    padding: 10px 12px;
+    border: 1px solid #8b3a3a;
+    border-radius: 8px;
+    background: #2b1719;
+    color: #ffb4ad;
+    font-size: 13px;
+    line-height: 1.45;
+    touch-action: auto;
+  }
+  .connection-alert.visible { display: block; }
   .top-bar input {
     flex: 1;
     min-width: 0;
@@ -234,11 +254,18 @@
     <div class="status-badge">
       <div id="dot" class="status-dot"></div>
       <span id="statusText">待機</span>
+      <svg id="wifiQuality" class="signal-icon" viewBox="0 0 24 20" role="img" aria-label="通信状態：未接続">
+        <path class="quality-arc" d="M9 13a4.25 4.25 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <path class="quality-arc" d="M5.5 9.5a9.2 9.2 0 0 1 13 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <path class="quality-arc" d="M2 6a14.2 14.2 0 0 1 20 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <circle cx="12" cy="16.5" r="1.5" fill="currentColor"/>
+      </svg>
     </div>
     <input id="textInput" type="text" placeholder="PCへ文字入力..." enterkeyhint="send">
     <button class="btn btn-primary" id="sendBtn">送信</button>
     <button class="btn" id="cfgBtn">⚙</button>
   </div>
+  <div id="connectionAlert" class="connection-alert" role="status" aria-live="polite"></div>
 
   <div class="key-strip">
     <div class="key-btn" id="backBtn">◀ 戻る</div>
@@ -296,6 +323,64 @@
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   let ws = null;
   let reconnectTimer = null;
+  let pingTimer = null;
+  let qualityWatchdog = null;
+  let pingSequence = 0;
+  let lastPongAt = 0;
+  let currentSignalBars = 0;
+  const pendingPings = new Map();
+  const recentRtts = [];
+
+  function setSignalBars(count, reportSocket = null) {
+    count = Math.max(0, Math.min(3, count));
+    const changed = count !== currentSignalBars;
+    currentSignalBars = count;
+    const arcs = document.querySelectorAll("#wifiQuality .quality-arc");
+    arcs.forEach((arc, index) => { arc.style.display = index < count ? "block" : "none"; });
+    document.getElementById("wifiQuality").setAttribute(
+      "aria-label", count === 0 ? "通信状態：未接続" : `通信状態：${count}本`
+    );
+    if (changed && reportSocket && reportSocket.readyState === WebSocket.OPEN) {
+      reportSocket.send(JSON.stringify({ type: "quality", bars: count }));
+    }
+  }
+
+  function stopQualityMonitor() {
+    if (pingTimer !== null) clearInterval(pingTimer);
+    if (qualityWatchdog !== null) clearInterval(qualityWatchdog);
+    pingTimer = null;
+    qualityWatchdog = null;
+    pendingPings.clear();
+    recentRtts.length = 0;
+    lastPongAt = 0;
+    currentSignalBars = 0;
+    setSignalBars(0);
+  }
+
+  function startQualityMonitor(socket) {
+    stopQualityMonitor();
+    const sendPing = () => {
+      if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+      const now = performance.now();
+      for (const [id, sentAt] of pendingPings) {
+        if (now - sentAt > 6000) pendingPings.delete(id);
+      }
+      const id = String(++pingSequence);
+      pendingPings.set(id, now);
+      socket.send(JSON.stringify({ type: "ping", id }));
+    };
+    sendPing();
+    pingTimer = setInterval(sendPing, 2000);
+    qualityWatchdog = setInterval(() => {
+      if (lastPongAt && Date.now() - lastPongAt > 6000) setSignalBars(0, socket);
+    }, 1000);
+  }
+
+  function showConnectionAlert(message = "") {
+    const alert = document.getElementById("connectionAlert");
+    alert.textContent = message;
+    alert.classList.toggle("visible", Boolean(message));
+  }
 
   function scheduleReconnect(delay = 800) {
     if (document.hidden || reconnectTimer !== null) return;
@@ -318,9 +403,12 @@
       if (ws !== socket) return;
       document.getElementById("dot").classList.add("connected");
       document.getElementById("statusText").textContent = "接続中";
+      showConnectionAlert();
+      startQualityMonitor(socket);
     };
-    socket.onclose = (event) => {
+    socket.onclose = async (event) => {
       if (ws !== socket) return;
+      stopQualityMonitor();
       document.getElementById("dot").classList.remove("connected");
       if (event.code === 4005) {
         document.getElementById("statusText").textContent = "別のタブで接続中です。前のタブを使ってください。";
@@ -328,6 +416,7 @@
       }
       if (event.code === 4002) {
         document.getElementById("statusText").textContent = "新しいQRコードを読み取ってください";
+        showConnectionAlert("このQRコードは更新されました。PC画面の新しいQRを読み取ってください。");
         return;
       }
       if (event.code === 4003) {
@@ -339,12 +428,36 @@
         document.getElementById("statusText").textContent = "一時停止中";
         return;
       }
+      if (event.code === 1006) {
+        try {
+          const check = await fetch(`/check?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+          if (ws !== socket) return;
+          if (check.status === 410) {
+            document.getElementById("statusText").textContent = "QRコードが古いです";
+            showConnectionAlert("このQRコードは使えなくなっています。PC画面で「QRを更新」を押し、新しいQRを読み取ってください。");
+            return;
+          }
+        } catch (_) {}
+      }
       document.getElementById("statusText").textContent = "再接続";
       scheduleReconnect();
     };
     socket.onmessage = (e) => {
       if (ws !== socket) return;
       const msg = JSON.parse(e.data);
+      if (msg.type === "pong") {
+        const sentAt = pendingPings.get(String(msg.id));
+        if (sentAt === undefined) return;
+        pendingPings.delete(String(msg.id));
+        const rtt = performance.now() - sentAt;
+        if (rtt > 6000) return;
+        lastPongAt = Date.now();
+        recentRtts.push(rtt);
+        if (recentRtts.length > 3) recentRtts.shift();
+        const averageRtt = recentRtts.reduce((sum, value) => sum + value, 0) / recentRtts.length;
+        setSignalBars(averageRtt < 120 ? 3 : averageRtt < 350 ? 2 : 1, socket);
+        return;
+      }
       if (msg.type === "init_settings" && msg.settings) {
         document.getElementById("sensRange").value = msg.settings.sensitivity;
         document.getElementById("sensVal").textContent = msg.settings.sensitivity;
@@ -362,9 +475,11 @@
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      stopQualityMonitor();
       return;
     }
-    if (!ws || ws.readyState === WebSocket.CLOSED) connect();
+    if (ws && ws.readyState === WebSocket.OPEN) startQualityMonitor(ws);
+    else if (!ws || ws.readyState === WebSocket.CLOSED) connect();
   });
 
   window.addEventListener("pagehide", () => {

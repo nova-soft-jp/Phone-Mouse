@@ -22,11 +22,23 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool menuOpen;
     private bool darkTheme = true;
     private bool loadingStartupOption;
+    // XAML initialization fires Checked events for initially checked boxes.
+    // Keep preference persistence disabled until InitializeComponent finishes.
+    private bool loadingNotificationPreferences = true;
+    private bool notifyConnection = true;
+    private bool notifyDisconnect = true;
+    private bool notifyError = true;
     public MainWindow()
     {
         InitializeComponent();
         LoadThemePreference();
         ApplyTheme(darkTheme, false);
+        loadingNotificationPreferences = true;
+        LoadNotificationPreferences();
+        NotifyConnectionCheck.IsChecked = notifyConnection;
+        NotifyDisconnectCheck.IsChecked = notifyDisconnect;
+        NotifyErrorCheck.IsChecked = notifyError;
+        loadingNotificationPreferences = false;
         loadingStartupOption = true;
         AutoStartCheck.IsChecked = IsAutoStartEnabled();
         loadingStartupOption = false;
@@ -38,8 +50,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        CreateTray();
-        try { await server.StartAsync(); }
+        try { CreateTray(); await server.StartAsync(); }
         catch (Exception ex) { OnServerUpdated(new(server.Current.Url, server.Current.Qr, false, $"サーバーを開始できませんでした: {ex.Message}", true)); }
     }
 
@@ -57,12 +68,28 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Dispatcher.BeginInvoke(() =>
         {
             UrlText.Text = update.Url;
+            AddressText.Text = Uri.TryCreate(update.Url, UriKind.Absolute, out var addressUri)
+                ? addressUri.Authority
+                : "接続先を確認できません";
+            ConnectionHint.Text = update.Connected
+                ? "接続中です。スマホを操作できます。"
+                : update.IsError && !string.IsNullOrWhiteSpace(update.Notice)
+                    ? update.Notice ?? "接続を開始できませんでした。ネットワーク設定を確認してください。"
+                    : "スマホも同じWi-Fiに接続してください。VPNやゲストWi-Fiで届かない場合は、PCのQRを更新して読み直します。";
+            ConnectionStageText.Text = update.SignalBars > 0
+                ? "③ 操作接続完了"
+                : update.PhonePageOpened
+                    ? "② スマホがページを開きました。操作接続を確認中です。"
+                    : "① QRコード表示中。スマホで読み取ってください。";
             if (update.Qr.Length > 0)
             {
                 using var ms = new MemoryStream(update.Qr);
                 var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.StreamSource = ms; bitmap.EndInit(); bitmap.Freeze(); QrImage.Source = bitmap;
             }
             connected = update.Connected;
+            SignalBar1.Visibility = update.SignalBars >= 1 ? Visibility.Visible : Visibility.Collapsed;
+            SignalBar2.Visibility = update.SignalBars >= 2 ? Visibility.Visible : Visibility.Collapsed;
+            SignalBar3.Visibility = update.SignalBars >= 3 ? Visibility.Visible : Visibility.Collapsed;
             var dotColor = update.Connected ? System.Windows.Media.Color.FromRgb(55, 205, 125) : System.Windows.Media.Color.FromRgb(240, 82, 82);
             var textColor = update.Connected ? System.Windows.Media.Color.FromRgb(91, 224, 153) : System.Windows.Media.Color.FromRgb(248, 113, 113);
             StatusDot.Fill = new SolidColorBrush(dotColor);
@@ -76,9 +103,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 oldIcon?.Dispose();
                 tray.Text = update.Connected ? "Phone-Mouse - 接続中" : "Phone-Mouse - 未接続";
             }
-            if (update.Notice is not null && tray is not null)
+            if (update.Notice is not null && tray is not null && ShouldShowNotice(update))
                 tray.ShowBalloonTip(3000, update.IsError ? "Phone-Mouse - エラー" : "Phone-Mouse", update.Notice, update.IsError ? ToolTipIcon.Error : ToolTipIcon.Info);
         });
+    }
+
+    private bool ShouldShowNotice(ServerUpdate update)
+    {
+        if (update.IsError) return notifyError;
+        if (update.IsConnectionNotice) return notifyConnection;
+        if (update.IsDisconnectNotice) return notifyDisconnect;
+        return true;
     }
 
     private static Icon CreateStatusIcon(bool isConnected)
@@ -118,7 +153,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
             catch (Exception ex)
             {
-                tray?.ShowBalloonTip(3000, "Phone-Mouse", $"報告フォームを開けませんでした: {ex.Message}", ToolTipIcon.Error);
+                if (notifyError) tray?.ShowBalloonTip(3000, "Phone-Mouse", $"報告フォームを開けませんでした: {ex.Message}", ToolTipIcon.Error);
             }
             return;
         }
@@ -213,6 +248,40 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             AutoStartStatus.Text = $"設定を保存できませんでした: {ex.Message}";
         }
     }
+
+    private string NotificationPreferencesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PhoneMouse", "notifications.json");
+    private void LoadNotificationPreferences()
+    {
+        try
+        {
+            if (!File.Exists(NotificationPreferencesPath)) return;
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(NotificationPreferencesPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("connection", out var connection)) notifyConnection = connection.GetBoolean();
+            if (root.TryGetProperty("disconnect", out var disconnect)) notifyDisconnect = disconnect.GetBoolean();
+            if (root.TryGetProperty("error", out var error)) notifyError = error.GetBoolean();
+        }
+        catch { }
+    }
+
+    private void NotificationPreference_Changed(object sender, RoutedEventArgs e)
+    {
+        if (loadingNotificationPreferences) return;
+        notifyConnection = NotifyConnectionCheck.IsChecked == true;
+        notifyDisconnect = NotifyDisconnectCheck.IsChecked == true;
+        notifyError = NotifyErrorCheck.IsChecked == true;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(NotificationPreferencesPath)!);
+            var preferences = new { connection = notifyConnection, disconnect = notifyDisconnect, error = notifyError };
+            File.WriteAllText(NotificationPreferencesPath, System.Text.Json.JsonSerializer.Serialize(preferences));
+        }
+        catch (Exception ex)
+        {
+            if (notifyError) tray?.ShowBalloonTip(2500, "Phone-Mouse", $"通知設定を保存できませんでした: {ex.Message}", ToolTipIcon.Error);
+        }
+    }
+
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } else { tray?.Dispose(); SystemEvents.DisplaySettingsChanged -= OnDisplayChanged; } }
     private void RestoreWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void OnDisplayChanged(object? sender, EventArgs e) { }
