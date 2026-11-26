@@ -5,14 +5,16 @@
         Title="Phone-Mouse" Width="900" Height="640" MinWidth="740" MinHeight="540"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True"
         Background="{DynamicResource AppBackground}" Foreground="{DynamicResource MainText}">
-    <Grid>
+    <Grid Background="{DynamicResource AppBackground}">
       <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/></Grid.RowDefinitions>
-      <ui:TitleBar x:Name="AppTitleBar" Grid.Row="0" Title="Phone-Mouse" ShowMinimize="True" ShowMaximize="True" ShowClose="True">
+      <ui:TitleBar x:Name="AppTitleBar" Grid.Row="0" Title="Phone-Mouse" ShowMinimize="True" ShowMaximize="True" ShowClose="True"
+                   Background="{DynamicResource AppBackground}" Foreground="{DynamicResource MainText}"
+                   ButtonsForeground="{DynamicResource MainText}" ButtonsBackground="{DynamicResource AppBackground}">
         <ui:TitleBar.Header>
           <Button x:Name="MenuButton" Content="☰" Click="MenuToggle_Click" Width="42" Height="38" FontSize="20" Style="{StaticResource MenuNavigationButton}" ToolTip="メニューを開く"/>
         </ui:TitleBar.Header>
       </ui:TitleBar>
-      <Grid Grid.Row="1" ClipToBounds="True">
+      <Grid Grid.Row="1" ClipToBounds="True" Background="{DynamicResource AppBackground}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <Grid Margin="28,24,28,28">
             <Grid x:Name="HomeView" Visibility="Visible">

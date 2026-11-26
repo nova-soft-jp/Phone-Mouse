@@ -153,14 +153,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         darkTheme = dark;
         AppTitleBar.ApplicationTheme = dark ? ApplicationTheme.Dark : ApplicationTheme.Light;
-        SetBrush("AppBackground", dark ? "#101318" : "#F5F7FA");
-        SetBrush("SidebarBackground", dark ? "#151A21" : "#E9EDF3");
+        SetBrush("AppBackground", dark ? "#101318" : "#FFFFFF");
+        SetBrush("SidebarBackground", dark ? "#151A21" : "#FFFFFF");
         SetBrush("PanelBackground", dark ? "#171D25" : "#FFFFFF");
         SetBrush("PanelBorder", dark ? "#2B3440" : "#D5DCE5");
         SetBrush("MainText", dark ? "#E9EDF4" : "#202833");
         SetBrush("SecondaryText", dark ? "#AAB4C2" : "#586575");
-        SetBrush("ButtonSurface", dark ? "#252B34" : "#E3E8EE");
-        SetBrush("ButtonHoverSurface", dark ? "#343D49" : "#D3DAE3");
+        SetBrush("ButtonSurface", dark ? "#252B34" : "#FFFFFF");
+        SetBrush("ButtonHoverSurface", dark ? "#343D49" : "#EEF1F5");
         SetBrush("ButtonText", dark ? "#F5F7FA" : "#202833");
         SetBrush("AccentSurface", dark ? "#C98BE3" : "#B76CD1");
         SetBrush("AccentHoverSurface", dark ? "#D6A5EA" : "#A95DC5");

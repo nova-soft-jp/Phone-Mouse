@@ -20,9 +20,9 @@
             <Style x:Key="FlatActionButton" TargetType="Button">
                 <Setter Property="Padding" Value="12,8"/><Setter Property="Margin" Value="0"/>
                 <Setter Property="Foreground" Value="{DynamicResource ButtonText}"/><Setter Property="Background" Value="{DynamicResource ButtonSurface}"/>
-                <Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Cursor" Value="Hand"/>
                 <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
