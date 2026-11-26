@@ -9,6 +9,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using Wpf.Ui.Appearance;
+using System.Diagnostics;
 
 namespace PhoneMouse.Desktop;
 
@@ -20,11 +21,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool connected;
     private bool menuOpen;
     private bool darkTheme = true;
+    private bool loadingStartupOption;
     public MainWindow()
     {
         InitializeComponent();
         LoadThemePreference();
         ApplyTheme(darkTheme, false);
+        loadingStartupOption = true;
+        AutoStartCheck.IsChecked = IsAutoStartEnabled();
+        loadingStartupOption = false;
         Loaded += OnLoaded;
         Closing += OnClosing;
         SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
@@ -118,6 +123,19 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (sender is not System.Windows.Controls.Button b) return;
         var key = b.Tag?.ToString() ?? "home";
+        if (key == "report")
+        {
+            SetMenuOpen(false);
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://github.com/nova-soft-jp/Phone-Mouse/issues/new?template=bug_report.yml") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                tray?.ShowBalloonTip(3000, "Phone-Mouse", $"報告フォームを開けませんでした: {ex.Message}", ToolTipIcon.Error);
+            }
+            return;
+        }
         HomeView.Visibility = key == "home" ? Visibility.Visible : Visibility.Collapsed;
         DetailView.Visibility = key is not ("home" or "settings") ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = key == "settings" ? Visibility.Visible : Visibility.Collapsed;
@@ -173,6 +191,42 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private static void SetBrush(string key, string color) => System.Windows.Application.Current.Resources[key] = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
     private string ThemePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PhoneMouse", "ui-theme.txt");
     private void LoadThemePreference() { try { darkTheme = !File.Exists(ThemePath) || File.ReadAllText(ThemePath).Trim() != "light"; } catch { darkTheme = true; } }
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValueName = "Phone-Mouse";
+    private static bool IsAutoStartEnabled()
+    {
+        try { using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath); return key?.GetValue(RunValueName) is not null; }
+        catch { return false; }
+    }
+    private void AutoStart_Changed(object sender, RoutedEventArgs e)
+    {
+        if (loadingStartupOption) return;
+        var enabled = AutoStartCheck.IsChecked == true;
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
+            if (key is null) throw new InvalidOperationException("自動起動の設定を保存できませんでした。");
+            if (enabled)
+            {
+                var executable = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrWhiteSpace(executable)) throw new InvalidOperationException("アプリの場所を確認できませんでした。");
+                key.SetValue(RunValueName, $"\"{executable}\"");
+                AutoStartStatus.Text = "WindowsにサインインしたときにPhone-Mouseを起動します。";
+            }
+            else
+            {
+                key.DeleteValue(RunValueName, false);
+                AutoStartStatus.Text = "PC起動時の自動起動はオフです。";
+            }
+        }
+        catch (Exception ex)
+        {
+            loadingStartupOption = true;
+            AutoStartCheck.IsChecked = !enabled;
+            loadingStartupOption = false;
+            AutoStartStatus.Text = $"設定を保存できませんでした: {ex.Message}";
+        }
+    }
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } else { tray?.Dispose(); SystemEvents.DisplaySettingsChanged -= OnDisplayChanged; } }
     private void RestoreWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void OnDisplayChanged(object? sender, EventArgs e) { }

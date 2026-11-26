@@ -1,0 +1,60 @@
+name: 不具合報告
+description: Phone-Mouseで起きた問題を報告します
+title: "[不具合] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告内容はGitHub上で公開されます。
+        QRコード、接続URL（tokenを含みます）、個人情報は貼り付けないでください。
+  - type: textarea
+    id: problem
+    attributes:
+      label: どんな問題が起きましたか？
+      description: エラーの表示や、起きたことをできるだけ具体的に書いてください。
+      placeholder: 例：スマホでQRコードを読み取っても接続中にならない
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 起きるまでの操作
+      description: 問題が起きるまでに行ったことを書いてください。
+      placeholder: |
+        1. Phone-Mouseを起動
+        2. QRコードを読み取る
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 本来どうなると思いましたか？
+      description: 実際の動作と期待した動作を教えてください。
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: どのくらいの頻度で起きますか？
+      options:
+        - 毎回起きる
+        - ときどき起きる
+        - 一度だけ起きた
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Phone-Mouseのバージョン
+      description: 分からなければ空欄で大丈夫です。
+      placeholder: 例：PhoneMouse.exeのプロパティに表示されたバージョン
+    validations:
+      required: false
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: スクリーンショットなど
+      description: QRコードやtoken、個人情報が見えない画像だけ添付してください。
+    validations:
+      required: false

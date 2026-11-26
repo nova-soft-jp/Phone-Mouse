@@ -60,6 +60,12 @@
                 <Button x:Name="LightThemeButton" Content="ライト" Style="{StaticResource FlatActionButton}" Click="LightTheme_Click"/>
               </StackPanel>
               <TextBlock x:Name="ThemeStatus" Text="現在：ダーク" FontSize="13" Foreground="{DynamicResource SecondaryText}" Margin="0,14,0,0"/>
+              <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,28,0,0">
+                <StackPanel>
+                  <CheckBox x:Name="AutoStartCheck" Content="PC起動時にPhone-Mouseを自動で起動" FontSize="15" Checked="AutoStart_Changed" Unchecked="AutoStart_Changed"/>
+                  <TextBlock x:Name="AutoStartStatus" Text="Windowsにサインインしたときに起動します。このアプリの保存場所を変更すると自動起動できなくなるため、起動後は同じ場所で使ってください。" FontSize="12" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="24,8,0,0"/>
+                </StackPanel>
+              </Border>
             </StackPanel>
           </Grid>
         </ScrollViewer>
@@ -75,6 +81,7 @@
               <Button Content="⚙   設定" Tag="settings" Click="Nav_Click" Style="{StaticResource MenuNavigationButton}"/>
               <Button Content="ⓘ   ウィンドウと終了" Tag="window" Click="Nav_Click" Style="{StaticResource MenuNavigationButton}"/>
               <Button Content="!   接続できないとき" Tag="trouble" Click="Nav_Click" Style="{StaticResource MenuNavigationButton}"/>
+              <Button Content="🐞   不具合を報告" Tag="report" Click="Nav_Click" Style="{StaticResource MenuNavigationButton}"/>
             </StackPanel>
             <StackPanel DockPanel.Dock="Bottom" Margin="12,0,0,4">
               <StackPanel Orientation="Horizontal" Margin="0,0,0,8"><Ellipse x:Name="MenuStatusDot" Width="9" Height="9" Fill="#F05252"/><TextBlock x:Name="MenuStatusText" Text="未接続" Margin="8,-3,0,0" Foreground="#F87171"/></StackPanel>

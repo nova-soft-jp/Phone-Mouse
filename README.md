@@ -32,6 +32,10 @@ PCに表示されるQRコードをスマートフォンで読み取ると、ブ�
 
 QRコードを更新すると、前のQRコードでの接続は解除されます。スマートフォンで新しいQRコードを読み取ってください。同じQRコードを何度も読み取ると、スマートフォンのブラウザーにタブが増えることがあります。操作に使うタブは最後に接続したものです。
 
+## PC起動時に自動で起動する
+
+アプリのメニューから「設定」を開き、「PC起動時にPhone-Mouseを自動で起動」をオンにすると、次回からWindowsにサインインしたときに起動します。オフにすると自動起動を解除できます。
+
 ## 接続できないとき
 
 - PCとスマートフォンが同じWi-Fiにつながっているか確認してください。
@@ -44,3 +48,9 @@ QRコードを更新すると、前のQRコードでの接続は解除されま�
 - [変更履歴を見る](https://github.com/nova-soft-jp/Phone-Mouse/commits/main/)
 - [公開状況（Deployments）を見る](https://github.com/nova-soft-jp/Phone-Mouse/deployments)
 - [リリース一覧を見る](https://github.com/nova-soft-jp/Phone-Mouse/releases)
+
+## 不具合を報告する
+
+[不具合報告フォームを開く](https://github.com/nova-soft-jp/Phone-Mouse/issues/new?template=bug_report.yml)
+
+報告内容はGitHub上で公開されます。スクリーンショットを添付するときは、QRコードや接続URL（tokenを含みます）が写っていないことを確認してください。送信にはGitHubへのログインが必要です。
