@@ -222,6 +222,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
                 key = msg.get("key", "")
                 if key in ("enter", "backspace", "escape", "tab", "space"):
                     pyautogui.press(key)
+            elif t == "select_all":
+                pyautogui.hotkey("ctrl", "a")
+            elif t == "copy":
+                pyautogui.hotkey("ctrl", "c")
             elif t == "type_text":
                 text = msg.get("text", "")
                 if text:

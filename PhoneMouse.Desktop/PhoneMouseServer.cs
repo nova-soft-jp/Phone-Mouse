@@ -211,7 +211,9 @@ public sealed class PhoneMouseServer : IAsyncDisposable
             case "scroll": int wheel=(int)(num("dy")*scrollSpeed*4*(invertScroll?-1:1)); if(wheel!=0) mouse_event(0x800,0,0,wheel,0); break;
             case "back": Press(0xA6); break; case "forward": Press(0xA7); break;
             case "key_press": var key=GetString(m,"key"); var vk=key switch {"enter"=>0x0D,"backspace"=>0x08,"escape"=>0x1B,"tab"=>0x09,"space"=>0x20,_=>0}; if(vk!=0) Press(vk); break;
-            case "type_text": var text=GetString(m,"text"); if(text.Length>0) System.Windows.Application.Current.Dispatcher.BeginInvoke(() => { System.Windows.Clipboard.SetText(text); keybd_event(0x11,0,0,UIntPtr.Zero); keybd_event(0x56,0,0,UIntPtr.Zero); keybd_event(0x56,0,2,UIntPtr.Zero); keybd_event(0x11,0,2,UIntPtr.Zero); }); break;
+            case "select_all": PressControlShortcut(0x41); break;
+            case "copy": PressControlShortcut(0x43); break;
+            case "type_text": var text=GetString(m,"text"); if(text.Length>0) System.Windows.Application.Current.Dispatcher.BeginInvoke(() => { System.Windows.Clipboard.SetText(text); PressControlShortcut(0x56); }); break;
             case "preview_settings": sensitivity=num("sensitivity",sensitivity);scrollSpeed=num("scroll_speed",scrollSpeed);if(m.TryGetProperty("invert_scroll",out var inv))invertScroll=inv.GetBoolean();break;
             case "save_settings": SaveSettings();break;
             case "quality":
@@ -225,6 +227,12 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private static async Task SendJson(WebSocket ws, object value, CancellationToken ct)=>await ws.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value)),WebSocketMessageType.Text,true,ct);
     private static void Click(bool right){mouse_event((uint)(right?8:2),0,0,0,0);mouse_event((uint)(right?16:4),0,0,0,0);}
     private static void Press(int vk){keybd_event((byte)vk,0,0,UIntPtr.Zero);keybd_event((byte)vk,0,2,UIntPtr.Zero);}
+    private static void PressControlShortcut(int vk)
+    {
+        keybd_event(0x11, 0, 0, UIntPtr.Zero);
+        Press(vk);
+        keybd_event(0x11, 0, 2, UIntPtr.Zero);
+    }
     private static string NewToken()=>Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(12)).TrimEnd('=').Replace('+','-').Replace('/','_');
     private static string GetLocalIp()
     {
