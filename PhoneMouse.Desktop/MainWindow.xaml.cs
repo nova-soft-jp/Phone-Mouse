@@ -58,15 +58,37 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Phone-Mouseを表示", null, (_, _) => RestoreWindow());
-        menu.Items.Add("終了", null, async (_, _) => { exiting = true; tray!.Visible = false; await server.DisposeAsync(); Close(); });
+        menu.Items.Add("終了", null, OnTrayExit);
         tray = new NotifyIcon { Icon = CreateStatusIcon(false), Text = "Phone-Mouse - 未接続", ContextMenuStrip = menu, Visible = true };
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) RestoreWindow(); };
+    }
+
+    private async void OnTrayExit(object? sender, EventArgs e)
+    {
+        if (exiting) return;
+        exiting = true;
+        Hide();
+        if (tray is not null) tray.Visible = false;
+        server.Updated -= OnServerUpdated;
+        try
+        {
+            await server.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError("Phone-Mouse shutdown: {0}", ex);
+        }
+        finally
+        {
+            System.Windows.Application.Current.Shutdown();
+        }
     }
 
     private void OnServerUpdated(ServerUpdate update)
     {
         Dispatcher.BeginInvoke(() =>
         {
+            if (exiting) return;
             UrlText.Text = update.Url;
             AddressText.Text = Uri.TryCreate(update.Url, UriKind.Absolute, out var addressUri)
                 ? addressUri.Authority
@@ -283,6 +305,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } else { tray?.Dispose(); SystemEvents.DisplaySettingsChanged -= OnDisplayChanged; } }
-    private void RestoreWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void RestoreWindow() { if (exiting) return; Show(); WindowState = WindowState.Normal; Activate(); }
     private void OnDisplayChanged(object? sender, EventArgs e) { }
 }

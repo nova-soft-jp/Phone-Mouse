@@ -28,6 +28,7 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private readonly object gate = new();
     private WebApplication? app;
     private WebSocket? active;
+    private bool stopping;
     private CancellationTokenSource? grace;
     private bool sessionActive;
     private bool phonePageOpened;
@@ -124,6 +125,12 @@ public sealed class PhoneMouseServer : IAsyncDisposable
         bool newSession;
         lock (gate)
         {
+            if (stopping)
+            {
+                socket.Abort();
+                socket.Dispose();
+                return;
+            }
             if (active?.State == WebSocketState.Open)
             {
                 _ = socket.CloseAsync((WebSocketCloseStatus)4005, "別のタブが接続中です", CancellationToken.None);
@@ -174,8 +181,16 @@ public sealed class PhoneMouseServer : IAsyncDisposable
                     // An explicit pagehide (4004) means the user closed/navigated away from the
                     // control tab, so show disconnected while retaining the grace session.
                     Publish(null, code != 4004);
-                    lock (gate) { grace?.Cancel(); grace?.Dispose(); grace = new(); }
-                    _ = GraceDisconnectAsync(grace);
+                    lock (gate)
+                    {
+                        if (!stopping)
+                        {
+                            grace?.Cancel();
+                            grace?.Dispose();
+                            grace = new();
+                            _ = GraceDisconnectAsync(grace);
+                        }
+                    }
                 }
             }
             socket.Dispose();
@@ -285,7 +300,27 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     private void Publish(string? notice=null,bool? connected=null,bool error=false,bool connectionNotice=false,bool disconnectNotice=false)=>Updated?.Invoke(new(url,MakeQr(url),connected??(active?.State==WebSocketState.Open),notice,error,signalBars,phonePageOpened,connectionNotice,disconnectNotice));
     private void LoadSettings(){try{if(!File.Exists(settingsPath))return;using var d=JsonDocument.Parse(File.ReadAllText(settingsPath));var r=d.RootElement;if(r.TryGetProperty("sensitivity",out var a))sensitivity=a.GetDouble();if(r.TryGetProperty("scroll_speed",out var b))scrollSpeed=b.GetDouble();if(r.TryGetProperty("invert_scroll",out var c))invertScroll=c.GetBoolean();}catch{}}
     private void SaveSettings(){try{Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);File.WriteAllText(settingsPath,JsonSerializer.Serialize(new{sensitivity,scroll_speed=scrollSpeed,invert_scroll=invertScroll},new JsonSerializerOptions{WriteIndented=true}));}catch{}}
-    public async ValueTask DisposeAsync(){if(app is not null){await app.StopAsync();await app.DisposeAsync();}lock(gate){grace?.Cancel();grace?.Dispose();}}
+    public async ValueTask DisposeAsync()
+    {
+        WebSocket? socket;
+        lock (gate)
+        {
+            if (stopping) return;
+            stopping = true;
+            socket = active;
+            active = null;
+            grace?.Cancel();
+            grace?.Dispose();
+            grace = null;
+        }
+        socket?.Abort();
+        if (app is not null)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try { await app.StopAsync(timeout.Token); }
+            finally { await app.DisposeAsync(); }
+        }
+    }
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags,int dx,int dy,int data,nint extra);
     [DllImport("user32.dll")] private static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
 }
