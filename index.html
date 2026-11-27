@@ -394,6 +394,7 @@
   let pendingDy = 0;
   let pendingScroll = 0;
   let motionRetry = null;
+  let smoothMoveTimer = null;
 
   function connect() {
     if (document.hidden) return;
@@ -411,6 +412,8 @@
       if (ws !== socket) return;
       clearTimeout(motionRetry);
       motionRetry = null;
+      clearTimeout(smoothMoveTimer);
+      smoothMoveTimer = null;
       pendingDx = pendingDy = pendingScroll = 0;
       stopQualityMonitor();
       document.getElementById("dot").classList.remove("connected");
@@ -504,6 +507,8 @@
   }
 
   function flushMotion(beforeAction = false) {
+    clearTimeout(smoothMoveTimer);
+    smoothMoveTimer = null;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       pendingDx = pendingDy = pendingScroll = 0;
       return;
@@ -602,7 +607,23 @@
     pendingDy += dy;
     lastX = x;
     lastY = y;
-    flushMotion();
+    const distance = Math.max(Math.abs(dx), Math.abs(dy));
+    if (distance > 6) {
+      flushMotion();
+    } else if (smoothMoveTimer === null) {
+      if (distance < 2 || motionRetry !== null || !ws ||
+          ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= 512) {
+        flushMotion();
+        return;
+      }
+      // Send the leading half now and spread the rest over one short interval.
+      pendingDx -= dx / 2;
+      pendingDy -= dy / 2;
+      flushMotion();
+      pendingDx = dx / 2;
+      pendingDy = dy / 2;
+      smoothMoveTimer = setTimeout(flushMotion, 8);
+    }
   }
 
   pad.addEventListener("pointerdown", (e) => {
