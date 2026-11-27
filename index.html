@@ -261,7 +261,7 @@
         <circle cx="12" cy="16.5" r="1.5" fill="currentColor"/>
       </svg>
     </div>
-    <input id="textInput" type="text" placeholder="PCへ文字入力..." enterkeyhint="send">
+    <input id="textInput" type="text" placeholder="PCへ文字入力..." enterkeyhint="send" readonly>
     <button class="btn btn-primary" id="sendBtn">送信</button>
     <button class="btn" id="cfgBtn">⚙</button>
   </div>
@@ -767,17 +767,43 @@
   });
 
   const textInput = document.getElementById("textInput");
+  const sendBtn = document.getElementById("sendBtn");
+
+  function endTextEntry() {
+    textInput.readOnly = true;
+    textInput.blur();
+  }
+
+  function handleControlPress(e) {
+    if (textInput.contains(e.target)) {
+      textInput.readOnly = false;
+    } else if (!textInput.readOnly && !sendBtn.contains(e.target)) {
+      endTextEntry();
+    }
+  }
+
+  document.addEventListener("pointerdown", handleControlPress, { capture: true });
+  document.addEventListener("touchstart", handleControlPress, { capture: true, passive: true });
+  textInput.addEventListener("blur", () => { textInput.readOnly = true; });
+
   function submitText() {
     if (textInput.value) {
       sendNow({ type: "type_text", text: textInput.value });
       textInput.value = "";
     }
+    endTextEntry();
   }
-  document.getElementById("sendBtn").onclick = submitText;
+  sendBtn.onclick = submitText;
   textInput.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Escape") {
+      endTextEntry();
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
-      submitText();
+      if (textInput.readOnly) textInput.readOnly = false;
+      else submitText();
     }
   });
 
