@@ -540,6 +540,9 @@
   let startX = 0, startY = 0;
   let startTime = 0;
   let moved = false, maxFingers = 0;
+  let pointerId = null;
+  let receivedPointerMove = false;
+  let receivedRawMove = false;
   let isDragging = false, pendingSecondTap = false;
   let singleClickTimer = null, dragHoldTimer = null;
   let twoFingerStartX = 0, twoFingerStartY = 0, swipeTriggered = false;
@@ -582,28 +585,52 @@
     }
   }, { passive: false });
 
+  function moveCursor(x, y) {
+    const dx = x - lastX;
+    const dy = y - lastY;
+
+    if (Math.hypot(x - startX, y - startY) > 6) {
+      moved = true;
+      if (pendingSecondTap) {
+        clearTimeout(dragHoldTimer);
+        dragHoldTimer = null;
+        startDragMode();
+      }
+    }
+
+    pendingDx += dx;
+    pendingDy += dy;
+    lastX = x;
+    lastY = y;
+    flushMotion();
+  }
+
+  pad.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch" || !e.isPrimary) return;
+    pointerId = e.pointerId;
+    receivedPointerMove = receivedRawMove = false;
+  });
+
+  function handlePointerMove(e) {
+    if (maxFingers !== 1 || pointerId === null || e.pointerId !== pointerId) return;
+    if (e.type === "pointerrawupdate") receivedRawMove = true;
+    else if (receivedRawMove) return;
+    receivedPointerMove = true;
+    moveCursor(e.clientX, e.clientY);
+  }
+
+  pad.addEventListener("pointermove", handlePointerMove);
+  pad.addEventListener("pointerrawupdate", handlePointerMove);
+  pad.addEventListener("pointercancel", (e) => {
+    if (e.pointerId !== pointerId) return;
+    pointerId = null;
+    receivedPointerMove = receivedRawMove = false;
+  });
+
   pad.addEventListener("touchmove", (e) => {
     e.preventDefault();
     if (e.touches.length === 1 && maxFingers === 1) {
-      const x = e.touches[0].clientX;
-      const y = e.touches[0].clientY;
-      const dx = x - lastX;
-      const dy = y - lastY;
-
-      if (Math.hypot(x - startX, y - startY) > 6) {
-        moved = true;
-        if (pendingSecondTap) {
-          clearTimeout(dragHoldTimer);
-          dragHoldTimer = null;
-          startDragMode();
-        }
-      }
-
-      pendingDx += dx;
-      pendingDy += dy;
-      lastX = x;
-      lastY = y;
-      flushMotion();
+      if (!receivedPointerMove) moveCursor(e.touches[0].clientX, e.touches[0].clientY);
     } else if (e.touches.length === 2) {
       const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -653,8 +680,25 @@
         }
       }
       maxFingers = 0;
+      pointerId = null;
+      receivedPointerMove = receivedRawMove = false;
     }
   }, { passive: false });
+
+  pad.addEventListener("touchcancel", () => {
+    clearTimeout(dragHoldTimer);
+    dragHoldTimer = null;
+    pendingSecondTap = false;
+    maxFingers = 0;
+    pointerId = null;
+    receivedPointerMove = receivedRawMove = false;
+    if (isDragging) {
+      isDragging = false;
+      sendNow({ type: "mouse_up" });
+      pad.classList.remove("dragging");
+      dragBadge.classList.remove("visible");
+    }
+  });
 
   const leftBtn = document.getElementById("leftBtn");
   leftBtn.addEventListener("touchstart", (e) => {
