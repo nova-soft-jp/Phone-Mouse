@@ -393,6 +393,7 @@
   let pendingDx = 0;
   let pendingDy = 0;
   let pendingScroll = 0;
+  let motionRetry = null;
 
   function connect() {
     if (document.hidden) return;
@@ -408,6 +409,9 @@
     };
     socket.onclose = async (event) => {
       if (ws !== socket) return;
+      clearTimeout(motionRetry);
+      motionRetry = null;
+      pendingDx = pendingDy = pendingScroll = 0;
       stopQualityMonitor();
       document.getElementById("dot").classList.remove("connected");
       if (event.code === 4005) {
@@ -494,30 +498,41 @@
 
   function sendNow(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {
+      flushMotion(true);
       ws.send(JSON.stringify(obj));
     }
   }
 
-  setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 512) {
-      if (Math.abs(pendingDx) >= 0.15 || Math.abs(pendingDy) >= 0.15) {
-        ws.send(JSON.stringify({
-          type: "move",
-          dx: Math.round(pendingDx * 100) / 100,
-          dy: Math.round(pendingDy * 100) / 100
-        }));
-        pendingDx = 0;
-        pendingDy = 0;
-      }
-      if (Math.abs(pendingScroll) >= 0.4) {
-        ws.send(JSON.stringify({
-          type: "scroll",
-          dy: Math.round(pendingScroll * 100) / 100
-        }));
-        pendingScroll = 0;
-      }
+  function flushMotion(beforeAction = false) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      pendingDx = pendingDy = pendingScroll = 0;
+      return;
     }
-  }, 25);
+    const hasMove = pendingDx !== 0 || pendingDy !== 0;
+    const hasScroll = Math.abs(pendingScroll) >= 0.4;
+    if (!hasMove && !hasScroll) return;
+
+    if (!beforeAction && ws.bufferedAmount >= 512) {
+      if (motionRetry === null) {
+        motionRetry = setTimeout(() => {
+          motionRetry = null;
+          flushMotion();
+        }, 16);
+      }
+      return;
+    }
+
+    clearTimeout(motionRetry);
+    motionRetry = null;
+    if (hasMove) {
+      ws.send(JSON.stringify({ type: "move", dx: pendingDx, dy: pendingDy }));
+      pendingDx = pendingDy = 0;
+    }
+    if (hasScroll) {
+      ws.send(JSON.stringify({ type: "scroll", dy: Math.round(pendingScroll * 100) / 100 }));
+      pendingScroll = 0;
+    }
+  }
 
   const pad = document.getElementById("pad");
   const dragBadge = document.getElementById("dragBadge");
@@ -588,6 +603,7 @@
       pendingDy += dy;
       lastX = x;
       lastY = y;
+      flushMotion();
     } else if (e.touches.length === 2) {
       const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -601,6 +617,7 @@
         sendNow({ type: totalDx > 0 ? "back" : "forward" });
       } else if (!swipeTriggered) {
         pendingScroll += (midY - lastY);
+        flushMotion();
       }
       lastY = midY;
     }
