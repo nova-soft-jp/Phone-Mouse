@@ -25,7 +25,6 @@ public sealed class PhoneMouseServer : IAsyncDisposable
 {
     private const int Port = 8765;
     private const int GraceMs = 24 * 60 * 60 * 1000;
-    private const uint HorizontalWheel = 0x1000;
     private const uint WmSysCommand = 0x0112;
     private const uint ScMonitorPower = 0xF170;
     private const int HwndBroadcast = 0xFFFF;
@@ -228,16 +227,11 @@ public sealed class PhoneMouseServer : IAsyncDisposable
             case "click": Click(false); break; case "double_click": Click(false); Click(false); break; case "right_click": Click(true); break;
             case "mouse_down": mouse_event(2,0,0,0,0); break; case "mouse_up": mouse_event(4,0,0,0,0); break;
             case "scroll": int wheel=(int)(num("dy")*scrollSpeed*4*(invertScroll?-1:1)); if(wheel!=0) mouse_event(0x800,0,0,wheel,0); break;
-            case "scroll_horizontal":
-                var horizontalWheel = (int)(num("dx") * scrollSpeed * 4 * (invertScroll ? -1 : 1));
-                if (horizontalWheel != 0) mouse_event(HorizontalWheel, 0, 0, horizontalWheel, 0);
-                break;
             case "back": Press(0xA6); break; case "forward": Press(0xA7); break;
             case "key_press": var key=GetString(m,"key"); var vk=key switch {"enter"=>0x0D,"backspace"=>0x08,"escape"=>0x1B,"tab"=>0x09,"space"=>0x20,_=>0}; if(vk!=0) Press(vk); break;
             case "select_all": PressControlShortcut(0x41); break;
             case "lock_pc": LockWorkStation(); break;
-            case "display_off": SetDisplayPower(false); break;
-            case "display_on": SetDisplayPower(true); break;
+            case "display_off": TurnDisplayOff(); break;
             case "copy": PressControlShortcut(0x43); break;
             case "type_text": var text=GetString(m,"text"); if(text.Length>0) System.Windows.Application.Current.Dispatcher.BeginInvoke(() => { System.Windows.Clipboard.SetText(text); PressControlShortcut(0x56); }); break;
             case "preview_settings": sensitivity=num("sensitivity",sensitivity);scrollSpeed=num("scroll_speed",scrollSpeed);if(m.TryGetProperty("invert_scroll",out var inv))invertScroll=inv.GetBoolean();break;
@@ -338,8 +332,8 @@ public sealed class PhoneMouseServer : IAsyncDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool LockWorkStation();
 
-    private static void SetDisplayPower(bool on) =>
-        PostMessageW(HwndBroadcast, WmSysCommand, ScMonitorPower, on ? -1 : 2);
+    private static void TurnDisplayOff() =>
+        PostMessageW(HwndBroadcast, WmSysCommand, ScMonitorPower, 2);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

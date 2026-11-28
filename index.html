@@ -188,7 +188,7 @@
   #dragBadge.visible {
     opacity: 1;
   }
-  #horizontalScroll {
+  #historySwipe {
     flex: 0 0 36px;
     display: grid;
     place-items: center;
@@ -200,7 +200,7 @@
     touch-action: none;
     cursor: ew-resize;
   }
-  #horizontalScroll:active {
+  #historySwipe:active {
     background: #212b39;
   }
   .bottom-bar {
@@ -297,7 +297,6 @@
     <button type="button" class="key-btn" id="enterBtn">Enter ↵</button>
     <button type="button" class="key-btn" id="lockBtn">PCをロック</button>
     <button type="button" class="key-btn" id="displayOffBtn">画面を消灯</button>
-    <button type="button" class="key-btn" id="displayOnBtn">画面をつける</button>
   </div>
 
   <div id="pad">
@@ -310,7 +309,7 @@
     </div>
   </div>
 
-  <div id="horizontalScroll">← 横スクロール →</div>
+  <div id="historySwipe">← 戻る ／ 進む →</div>
 
   <div class="bottom-bar">
     <div class="click-btn" id="leftBtn">左クリック（長押しドラッグ）</div>
@@ -427,7 +426,6 @@
   let pendingDx = 0;
   let pendingDy = 0;
   let pendingScroll = 0;
-  let pendingHorizontalScroll = 0;
   let motionRetry = null;
   let smoothMoveTimer = null;
 
@@ -477,7 +475,6 @@
     clearTimeout(smoothMoveTimer);
     smoothMoveTimer = null;
     pendingDx = pendingDy = pendingScroll = 0;
-    pendingHorizontalScroll = 0;
     stopQualityMonitor();
     setConnectionStatus(document.hidden ? "一時停止中" : "再接続中");
     if (code === 4005) {
@@ -541,13 +538,11 @@
     smoothMoveTimer = null;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       pendingDx = pendingDy = pendingScroll = 0;
-      pendingHorizontalScroll = 0;
       return;
     }
     const hasMove = pendingDx !== 0 || pendingDy !== 0;
     const hasScroll = Math.abs(pendingScroll) >= 0.4;
-    const hasHorizontalScroll = Math.abs(pendingHorizontalScroll) >= 1;
-    if (!hasMove && !hasScroll && !hasHorizontalScroll) return;
+    if (!hasMove && !hasScroll) return;
 
     if (!beforeAction && ws.bufferedAmount >= 512) {
       if (motionRetry === null) {
@@ -569,30 +564,35 @@
       ws.send(JSON.stringify({ type: "scroll", dy: Math.round(pendingScroll * 100) / 100 }));
       pendingScroll = 0;
     }
-    if (hasHorizontalScroll) {
-      const dx = Math.trunc(pendingHorizontalScroll);
-      ws.send(JSON.stringify({ type: "scroll_horizontal", dx }));
-      pendingHorizontalScroll -= dx;
-    }
   }
 
-  const horizontalScroll = document.getElementById("horizontalScroll");
-  let horizontalPointer = null;
-  let horizontalLastX = 0;
-  horizontalScroll.addEventListener("pointerdown", (event) => {
-    if (horizontalPointer !== null || event.button !== 0) return;
-    horizontalPointer = event.pointerId;
-    horizontalLastX = event.clientX;
-    horizontalScroll.setPointerCapture(event.pointerId);
+  const historySwipe = document.getElementById("historySwipe");
+  let historyTouch = null;
+  let historyStartX = 0;
+  let historyStartY = 0;
+  historySwipe.addEventListener("touchstart", (event) => {
+    event.preventDefault();
+    if (event.touches.length !== 1) {
+      historyTouch = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    historyTouch = touch.identifier;
+    historyStartX = touch.clientX;
+    historyStartY = touch.clientY;
+  }, { passive: false });
+  historySwipe.addEventListener("touchend", (event) => {
+    const touch = Array.from(event.changedTouches).find(item => item.identifier === historyTouch);
+    if (!touch) return;
+    historyTouch = null;
+    const dx = touch.clientX - historyStartX;
+    const dy = touch.clientY - historyStartY;
+    if (Math.abs(dx) >= 24 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      sendNow({ type: dx < 0 ? "back" : "forward" });
+    }
   });
-  horizontalScroll.addEventListener("pointermove", (event) => {
-    if (event.pointerId !== horizontalPointer) return;
-    pendingHorizontalScroll += horizontalLastX - event.clientX;
-    horizontalLastX = event.clientX;
-    flushMotion();
-  });
-  horizontalScroll.addEventListener("lostpointercapture", (event) => {
-    if (event.pointerId === horizontalPointer) horizontalPointer = null;
+  historySwipe.addEventListener("touchcancel", () => {
+    historyTouch = null;
   });
 
   const pad = document.getElementById("pad");
@@ -873,7 +873,6 @@
     if (window.confirm("PCをロックしますか？")) sendNow({ type: "lock_pc" });
   };
   document.getElementById("displayOffBtn").onclick = () => sendNow({ type: "display_off" });
-  document.getElementById("displayOnBtn").onclick = () => sendNow({ type: "display_on" });
 
   const panel = document.getElementById("settings-panel");
   document.getElementById("cfgBtn").onclick = () => panel.classList.add("open");
