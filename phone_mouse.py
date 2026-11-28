@@ -12,6 +12,7 @@ import secrets
 import threading
 import json
 import ctypes
+from ctypes import wintypes
 import tempfile
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -31,6 +32,12 @@ MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_HWHEEL = 0x1000
+WM_SYSCOMMAND = 0x0112
+SC_MONITORPOWER = 0xF170
+HWND_BROADCAST = 0xFFFF
+user32.PostMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+user32.PostMessageW.restype = wintypes.BOOL
 
 VK_BROWSER_BACK = 0xA6
 VK_BROWSER_FORWARD = 0xA7
@@ -214,6 +221,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
                 val = int(float(msg.get("dy", 0)) * spd * 4 * inv)
                 if val != 0:
                     user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, val, 0)
+            elif t == "scroll_horizontal":
+                spd = float(settings.get("scroll_speed", 1.0))
+                inv = -1 if settings.get("invert_scroll", False) else 1
+                val = int(float(msg.get("dx", 0)) * spd * 4 * inv)
+                if val != 0:
+                    user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, val, 0)
             elif t == "back":
                 press_vk(VK_BROWSER_BACK)
             elif t == "forward":
@@ -224,6 +237,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
                     pyautogui.press(key)
             elif t == "select_all":
                 pyautogui.hotkey("ctrl", "a")
+            elif t == "lock_pc":
+                user32.LockWorkStation()
+            elif t in ("display_off", "display_on"):
+                user32.PostMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER,
+                                    -1 if t == "display_on" else 2)
             elif t == "copy":
                 pyautogui.hotkey("ctrl", "c")
             elif t == "type_text":

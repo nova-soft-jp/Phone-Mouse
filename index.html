@@ -125,6 +125,9 @@
     border-bottom: 1px solid #21262d;
     overflow-x: auto;
   }
+  .key-strip, .key-strip > * {
+    touch-action: pan-x;
+  }
   .key-btn {
     flex: 1;
     background: #1c2128;
@@ -184,6 +187,21 @@
   }
   #dragBadge.visible {
     opacity: 1;
+  }
+  #horizontalScroll {
+    flex: 0 0 36px;
+    display: grid;
+    place-items: center;
+    background: #12161c;
+    border-top: 1px solid #30363d;
+    color: #c9d1d9;
+    font-size: 12px;
+    font-weight: 600;
+    touch-action: none;
+    cursor: ew-resize;
+  }
+  #horizontalScroll:active {
+    background: #212b39;
   }
   .bottom-bar {
     display: grid;
@@ -267,16 +285,19 @@
   </div>
   <div id="connectionAlert" class="connection-alert" role="status" aria-live="polite"></div>
 
-  <div class="key-strip">
+  <div class="key-strip" role="group" aria-label="PC操作ボタン">
     <button type="button" class="key-btn" id="selectAllBtn">全選択</button>
     <button type="button" class="key-btn" id="copyBtn">コピー</button>
-    <div class="key-btn" id="backBtn">◀ 戻る</div>
-    <div class="key-btn" id="fwdBtn">進む ▶</div>
-    <div class="key-btn" id="escBtn">Esc</div>
-    <div class="key-btn" id="tabBtn">Tab</div>
-    <div class="key-btn" id="spaceBtn">Space</div>
-    <div class="key-btn" id="bsBtn">⌫</div>
-    <div class="key-btn" id="enterBtn">Enter ↵</div>
+    <button type="button" class="key-btn" id="backBtn">◀ 戻る</button>
+    <button type="button" class="key-btn" id="fwdBtn">進む ▶</button>
+    <button type="button" class="key-btn" id="escBtn">Esc</button>
+    <button type="button" class="key-btn" id="tabBtn">Tab</button>
+    <button type="button" class="key-btn" id="spaceBtn">Space</button>
+    <button type="button" class="key-btn" id="bsBtn" aria-label="Backspace">⌫</button>
+    <button type="button" class="key-btn" id="enterBtn">Enter ↵</button>
+    <button type="button" class="key-btn" id="lockBtn">PCをロック</button>
+    <button type="button" class="key-btn" id="displayOffBtn">画面を消灯</button>
+    <button type="button" class="key-btn" id="displayOnBtn">画面をつける</button>
   </div>
 
   <div id="pad">
@@ -288,6 +309,8 @@
       <strong>2本指左右スワイプ</strong>：ブラウザ戻る・進む
     </div>
   </div>
+
+  <div id="horizontalScroll">← 横スクロール →</div>
 
   <div class="bottom-bar">
     <div class="click-btn" id="leftBtn">左クリック（長押しドラッグ）</div>
@@ -404,6 +427,7 @@
   let pendingDx = 0;
   let pendingDy = 0;
   let pendingScroll = 0;
+  let pendingHorizontalScroll = 0;
   let motionRetry = null;
   let smoothMoveTimer = null;
 
@@ -453,6 +477,7 @@
     clearTimeout(smoothMoveTimer);
     smoothMoveTimer = null;
     pendingDx = pendingDy = pendingScroll = 0;
+    pendingHorizontalScroll = 0;
     stopQualityMonitor();
     setConnectionStatus(document.hidden ? "一時停止中" : "再接続中");
     if (code === 4005) {
@@ -516,11 +541,13 @@
     smoothMoveTimer = null;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       pendingDx = pendingDy = pendingScroll = 0;
+      pendingHorizontalScroll = 0;
       return;
     }
     const hasMove = pendingDx !== 0 || pendingDy !== 0;
     const hasScroll = Math.abs(pendingScroll) >= 0.4;
-    if (!hasMove && !hasScroll) return;
+    const hasHorizontalScroll = Math.abs(pendingHorizontalScroll) >= 1;
+    if (!hasMove && !hasScroll && !hasHorizontalScroll) return;
 
     if (!beforeAction && ws.bufferedAmount >= 512) {
       if (motionRetry === null) {
@@ -542,7 +569,31 @@
       ws.send(JSON.stringify({ type: "scroll", dy: Math.round(pendingScroll * 100) / 100 }));
       pendingScroll = 0;
     }
+    if (hasHorizontalScroll) {
+      const dx = Math.trunc(pendingHorizontalScroll);
+      ws.send(JSON.stringify({ type: "scroll_horizontal", dx }));
+      pendingHorizontalScroll -= dx;
+    }
   }
+
+  const horizontalScroll = document.getElementById("horizontalScroll");
+  let horizontalPointer = null;
+  let horizontalLastX = 0;
+  horizontalScroll.addEventListener("pointerdown", (event) => {
+    if (horizontalPointer !== null || event.button !== 0) return;
+    horizontalPointer = event.pointerId;
+    horizontalLastX = event.clientX;
+    horizontalScroll.setPointerCapture(event.pointerId);
+  });
+  horizontalScroll.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== horizontalPointer) return;
+    pendingHorizontalScroll += horizontalLastX - event.clientX;
+    horizontalLastX = event.clientX;
+    flushMotion();
+  });
+  horizontalScroll.addEventListener("lostpointercapture", (event) => {
+    if (event.pointerId === horizontalPointer) horizontalPointer = null;
+  });
 
   const pad = document.getElementById("pad");
   const dragBadge = document.getElementById("dragBadge");
@@ -817,6 +868,12 @@
   document.getElementById("spaceBtn").onclick = () => sendNow({ type: "key_press", key: "space" });
   document.getElementById("bsBtn").onclick = () => sendNow({ type: "key_press", key: "backspace" });
   document.getElementById("enterBtn").onclick = () => sendNow({ type: "key_press", key: "enter" });
+  document.getElementById("lockBtn").onclick = () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (window.confirm("PCをロックしますか？")) sendNow({ type: "lock_pc" });
+  };
+  document.getElementById("displayOffBtn").onclick = () => sendNow({ type: "display_off" });
+  document.getElementById("displayOnBtn").onclick = () => sendNow({ type: "display_on" });
 
   const panel = document.getElementById("settings-panel");
   document.getElementById("cfgBtn").onclick = () => panel.classList.add("open");
