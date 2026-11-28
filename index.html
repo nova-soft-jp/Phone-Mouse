@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -333,6 +333,11 @@
   const pendingPings = new Map();
   const recentRtts = [];
 
+  function setConnectionStatus(text, connected = false) {
+    document.getElementById("dot").classList.toggle("connected", connected);
+    document.getElementById("statusText").textContent = text;
+  }
+
   function setSignalBars(count, reportSocket = null) {
     count = Math.max(0, Math.min(3, count));
     const changed = count !== currentSignalBars;
@@ -361,6 +366,8 @@
 
   function startQualityMonitor(socket) {
     stopQualityMonitor();
+    setConnectionStatus("接続を確認中");
+    lastPongAt = Date.now();
     const sendPing = () => {
       if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
       const now = performance.now();
@@ -374,7 +381,9 @@
     sendPing();
     pingTimer = setInterval(sendPing, 2000);
     qualityWatchdog = setInterval(() => {
-      if (lastPongAt && Date.now() - lastPongAt > 6000) setSignalBars(0, socket);
+      if (ws !== socket || Date.now() - lastPongAt <= 6000) return;
+      socket.close(4003, "PCからの応答がありません");
+      handleSocketClose(socket, 4003);
     }, 1000);
   }
 
@@ -405,54 +414,12 @@
     ws = socket;
     socket.onopen = () => {
       if (ws !== socket) return;
-      document.getElementById("dot").classList.add("connected");
-      document.getElementById("statusText").textContent = "接続中";
       showConnectionAlert();
       startQualityMonitor(socket);
     };
-    socket.onclose = async (event) => {
-      if (ws !== socket) return;
-      clearTimeout(motionRetry);
-      motionRetry = null;
-      clearTimeout(smoothMoveTimer);
-      smoothMoveTimer = null;
-      pendingDx = pendingDy = pendingScroll = 0;
-      stopQualityMonitor();
-      document.getElementById("dot").classList.remove("connected");
-      if (event.code === 4005) {
-        document.getElementById("statusText").textContent = "別のタブで接続中です。前のタブを使ってください。";
-        return;
-      }
-      if (event.code === 4002) {
-        document.getElementById("statusText").textContent = "新しいQRコードを読み取ってください";
-        showConnectionAlert("このQRコードは更新されました。PC画面の新しいQRを読み取ってください。");
-        return;
-      }
-      if (event.code === 4003) {
-        document.getElementById("statusText").textContent = document.hidden ? "一時停止中" : "再接続中";
-        if (!document.hidden) scheduleReconnect(0);
-        return;
-      }
-      if (document.hidden) {
-        document.getElementById("statusText").textContent = "一時停止中";
-        return;
-      }
-      if (event.code === 1006) {
-        try {
-          const check = await fetch(`/check?token=${encodeURIComponent(token)}`, { cache: "no-store" });
-          if (ws !== socket) return;
-          if (check.status === 410) {
-            document.getElementById("statusText").textContent = "QRコードが古いです";
-            showConnectionAlert("このQRコードは使えなくなっています。PC画面で「QRを更新」を押し、新しいQRを読み取ってください。");
-            return;
-          }
-        } catch (_) {}
-      }
-      document.getElementById("statusText").textContent = "再接続";
-      scheduleReconnect();
-    };
+    socket.onclose = (event) => handleSocketClose(socket, event.code);
     socket.onmessage = (e) => {
-      if (ws !== socket) return;
+      if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
       const msg = JSON.parse(e.data);
       if (msg.type === "pong") {
         const sentAt = pendingPings.get(String(msg.id));
@@ -461,6 +428,7 @@
         const rtt = performance.now() - sentAt;
         if (rtt > 6000) return;
         lastPongAt = Date.now();
+        setConnectionStatus("接続中", true);
         recentRtts.push(rtt);
         if (recentRtts.length > 3) recentRtts.shift();
         const averageRtt = recentRtts.reduce((sum, value) => sum + value, 0) / recentRtts.length;
@@ -476,6 +444,40 @@
       }
     };
   }
+
+  async function handleSocketClose(socket, code) {
+    if (ws !== socket) return;
+    ws = null;
+    clearTimeout(motionRetry);
+    motionRetry = null;
+    clearTimeout(smoothMoveTimer);
+    smoothMoveTimer = null;
+    pendingDx = pendingDy = pendingScroll = 0;
+    stopQualityMonitor();
+    setConnectionStatus(document.hidden ? "一時停止中" : "再接続中");
+    if (code === 4005) {
+      document.getElementById("statusText").textContent = "別のタブで接続中です。前のタブを使ってください。";
+      return;
+    }
+    if (code === 4002) {
+      document.getElementById("statusText").textContent = "新しいQRコードを読み取ってください";
+      showConnectionAlert("このQRコードは更新されました。PC画面の新しいQRを読み取ってください。");
+      return;
+    }
+    if (document.hidden) return;
+    if (code === 1006) {
+      try {
+        const check = await fetch(`/check?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+        if (ws !== null) return;
+        if (check.status === 410) {
+          document.getElementById("statusText").textContent = "QRコードが古いです";
+          showConnectionAlert("このQRコードは使えなくなっています。PC画面で「QRを更新」を押し、新しいQRを読み取ってください。");
+          return;
+        }
+      } catch (_) {}
+    }
+    scheduleReconnect();
+  }
   connect();
 
   document.addEventListener("visibilitychange", () => {
@@ -485,6 +487,7 @@
         reconnectTimer = null;
       }
       stopQualityMonitor();
+      setConnectionStatus("一時停止中");
       return;
     }
     if (ws && ws.readyState === WebSocket.OPEN) startQualityMonitor(ws);
@@ -553,7 +556,7 @@
   let receivedPointerMove = false;
   let receivedRawMove = false;
   let isDragging = false, pendingSecondTap = false;
-  let singleClickTimer = null, dragHoldTimer = null;
+  let secondTapTimer = null, dragHoldTimer = null;
   let twoFingerStartX = 0, twoFingerStartY = 0, swipeTriggered = false;
 
   function startDragMode() {
@@ -578,16 +581,16 @@
       startTime = now;
       moved = false;
 
-      if (!suppressPadTap && singleClickTimer !== null) {
-        clearTimeout(singleClickTimer);
-        singleClickTimer = null;
+      if (!suppressPadTap && secondTapTimer !== null) {
+        clearTimeout(secondTapTimer);
+        secondTapTimer = null;
         pendingSecondTap = true;
         dragHoldTimer = setTimeout(startDragMode, 140);
       }
     } else if (touches.length === 2) {
-      if (singleClickTimer !== null) {
-        clearTimeout(singleClickTimer);
-        singleClickTimer = null;
+      if (secondTapTimer !== null) {
+        clearTimeout(secondTapTimer);
+        secondTapTimer = null;
       }
       pendingSecondTap = false;
       twoFingerStartX = (touches[0].clientX + touches[1].clientX) / 2;
@@ -696,12 +699,12 @@
         dragBadge.classList.remove("visible");
       } else if (pendingSecondTap) {
         pendingSecondTap = false;
-        sendNow({ type: "double_click" });
+        sendNow({ type: "click" });
       } else if (!suppressPadTap && !moved && dt < 320) {
         if (maxFingers === 1) {
-          singleClickTimer = setTimeout(() => {
-            singleClickTimer = null;
-            sendNow({ type: "click" });
+          sendNow({ type: "click" });
+          secondTapTimer = setTimeout(() => {
+            secondTapTimer = null;
           }, 300);
         } else if (maxFingers >= 2) {
           sendNow({ type: "right_click" });
@@ -734,8 +737,8 @@
     if (leftHeld) return;
     leftHeld = true;
     suppressPadTap = true;
-    clearTimeout(singleClickTimer);
-    singleClickTimer = null;
+    clearTimeout(secondTapTimer);
+    secondTapTimer = null;
     clearTimeout(dragHoldTimer);
     dragHoldTimer = null;
     pendingSecondTap = false;

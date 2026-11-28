@@ -28,9 +28,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool notifyConnection = true;
     private bool notifyDisconnect = true;
     private bool notifyError = true;
+    private AppUpdate? availableUpdate;
+    private bool updateInProgress;
     public MainWindow()
     {
         InitializeComponent();
+        AppVersionText.Text = $"バージョン {AppUpdate.CurrentVersion.ToString(3)}";
         LoadThemePreference();
         ApplyTheme(darkTheme, false);
         loadingNotificationPreferences = true;
@@ -50,8 +53,42 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        Loaded -= OnLoaded;
         try { CreateTray(); await server.StartAsync(); }
         catch (Exception ex) { OnServerUpdated(new(server.Current.Url, server.Current.Qr, false, $"サーバーを開始できませんでした: {ex.Message}", true)); }
+        try
+        {
+            availableUpdate = await AppUpdate.CheckAsync();
+            if (exiting || availableUpdate is null) return;
+            UpdateStatus.Text = $"バージョン {availableUpdate.Version.ToString(3)} があります。";
+            UpdatePanel.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("Phone-Mouse update check: {0}", ex);
+        }
+    }
+
+    private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (exiting || updateInProgress || availableUpdate is null) return;
+        updateInProgress = true;
+        UpdateButton.IsEnabled = false;
+        UpdateStatus.Text = "更新をダウンロードしています…";
+        try
+        {
+            await availableUpdate.PrepareAsync();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("Phone-Mouse update: {0}", ex);
+            UpdateStatus.Text = "更新を準備できませんでした。通信や保存先を確認して、もう一度お試しください。";
+            UpdateButton.IsEnabled = true;
+            return;
+        }
+        finally { updateInProgress = false; }
+        UpdateStatus.Text = "更新して再起動しています…";
+        await ExitAsync(forUpdate: true);
     }
 
     private void CreateTray()
@@ -63,16 +100,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) RestoreWindow(); };
     }
 
-    private async void OnTrayExit(object? sender, EventArgs e)
+    private async void OnTrayExit(object? sender, EventArgs e) => await ExitAsync();
+
+    private async Task ExitAsync(bool forUpdate = false)
     {
-        if (exiting) return;
+        if (exiting || updateInProgress) return;
         exiting = true;
         Hide();
         if (tray is not null) tray.Visible = false;
         server.Updated -= OnServerUpdated;
         try
         {
-            await server.DisposeAsync();
+            var shutdown = server.DisposeAsync().AsTask();
+            if (forUpdate)
+                await shutdown.WaitAsync(TimeSpan.FromSeconds(8));
+            else
+                await shutdown;
         }
         catch (Exception ex)
         {

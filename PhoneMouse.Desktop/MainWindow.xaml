@@ -54,6 +54,11 @@
                     <Button Content="URLをコピー" Style="{StaticResource FlatActionButton}" Click="CopyUrl_Click"/>
                   </StackPanel>
                   <TextBlock x:Name="ConnectionHint" Text="PCとスマホを同じWi-Fiに接続してください" FontSize="11" Foreground="{DynamicResource SecondaryText}" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300" Margin="0,10,0,0"/>
+                  <TextBlock x:Name="AppVersionText" FontSize="11" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                  <StackPanel x:Name="UpdatePanel" Visibility="Collapsed" Margin="0,12,0,0">
+                    <TextBlock x:Name="UpdateStatus" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="290" Foreground="{DynamicResource SecondaryText}"/>
+                    <Button x:Name="UpdateButton" Content="更新して再起動" Click="InstallUpdate_Click" Style="{StaticResource FlatActionButton}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                  </StackPanel>
                 </StackPanel>
               </Border>
             </Grid>

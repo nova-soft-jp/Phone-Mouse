@@ -46,9 +46,13 @@ QRコードを更新すると、前のQRコードでの接続は解除されま�
 
 ## 更新情報
 
+PCアプリのQRコードの下に、現在のバージョンが表示されます。起動時に新しいバージョンが見つかった場合は「更新して再起動」を押すと、アプリ内で更新できます。更新機能のない旧版からは、更新機能付きの版を一度ダウンロードしてください。
+
 - [変更履歴を見る](https://github.com/nova-soft-jp/Phone-Mouse/commits/main/)
 - [公開状況（Deployments）を見る](https://github.com/nova-soft-jp/Phone-Mouse/deployments)
 - [リリース一覧を見る](https://github.com/nova-soft-jp/Phone-Mouse/releases)
+
+新版を配布するときは、`PhoneMouse.Desktop.csproj` の `Version` を上げ、その番号と一致するタグ（例 `v1.0.2`）で GitHub Releases に通常リリースを公開します。Windows x64 の自己完結型・単体ファイルとしてビルドし、`PhoneMouse.exe` をリリースに添付します。
 
 ## 不具合を報告する
 
